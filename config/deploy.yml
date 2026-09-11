@@ -1,0 +1,75 @@
+# <% require "dotenv"; Dotenv.load(".env") %>
+# Kamal deploy config for this repository. Uses environment variables:
+# - GITHUB_REPOSITORY (e.g. acme/example.org) - from GitHub Action ${github.repository}
+#     SERVICE (e.g. example-org)
+#     IMAGE   (e.g. ghcr.io/acme/example.org)
+# - KAMAL_REGISTRY_USERNAME (e.g. my-user)    - from GitHub Action ${github.actor}
+# - KAMAL_REGISTRY_PASSWORD ($GITHUB_TOKEN)   - from GitHub Action ${secrets.GITHUB_TOKEN}
+# - KAMAL_DEPLOY_IP (e.g. 100.100.100.100)    - from GitHub Action Secret
+# - KAMAL_DEPLOY_HOST (e.g. example.org)      - from GitHub Action Secret
+# - POSTGRES_PASSWORD (e.g. random-password)  - from GitHub Action Secret
+#
+# Using environment variables keeps this configuration reusable across multiple apps.
+# For a simpler app-specific setup (without needing .env), they can be replaced with hard-coded values.
+
+# Name of your application. Used to uniquely configure containers. (e.g. example-org)
+service: <%= ENV['SERVICE'] %>
+
+# Name of the container image. (e.g. ghcr.io/acme/example.org)
+image: <%= ENV['IMAGE'] %>
+
+# Required for use of ASP.NET Core with Kamal-Proxy.
+env:
+  clear:
+    ASPNETCORE_FORWARDEDHEADERS_ENABLED: true
+  # secrets from ./kamal/secrets
+  secret:
+    - SERVICESTACK_LICENSE
+    - APPSETTINGS_JSON_BASE64
+
+# Deploy to these servers.
+servers:
+  # IP address of server to deploy to. (e.g. 100.100.100.100)
+  web:
+    hosts:
+     - <%= ENV['KAMAL_DEPLOY_IP'] %>
+
+# Enable SSL auto certification via Let's Encrypt (and allow for multiple apps on one server).
+# If using something like Cloudflare, it is recommended to set encryption mode
+# in Cloudflare's SSL/TLS setting to "Full" to enable end-to-end encryption.
+proxy:
+  ssl: true
+  # Hostname to proxy. (e.g. example.org)
+  host: <%= ENV['KAMAL_DEPLOY_HOST'] %>
+  # kamal-proxy connects to your container over port 80, use `app_port` to specify a different port.
+  app_port: 8080
+
+# Credentials for your image host.
+registry:
+  # Specify the registry server, if you're not using Docker Hub
+  server: ghcr.io
+  username:
+    - KAMAL_REGISTRY_USERNAME
+
+  # Always use an access token rather than real password (pulled from .kamal/secrets).
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+# Configure builder setup.
+builder:
+  arch: amd64
+
+volumes:
+  - "/opt/docker/<%= ENV['SERVICE'] %>/App_Data:/app/App_Data"
+
+#accessories:
+#  litestream:
+#    roles: ["web"]
+#    image: litestream/litestream
+#    files: ["config/litestream.yml:/etc/litestream.yml"]
+#    volumes: ["/opt/docker/MyApp/App_Data:/data"]
+#    cmd: replicate
+#    env:
+#      secret:
+#        - ACCESS_KEY_ID
+#        - SECRET_ACCESS_KEY
