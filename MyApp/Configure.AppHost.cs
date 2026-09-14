@@ -29,7 +29,11 @@ public class AppHost() : AppHostBase("Acme"), IHostingStartup
     
     // Prefer the deployment secret. The checked-in OSS key keeps forks and pull
     // request builds reproducible when GitHub correctly withholds repository secrets.
-    public static void RegisterKey() => ServiceStack.Licensing.RegisterLicense(
-        Environment.GetEnvironmentVariable("SERVICESTACK_LICENSE")
-        ?? "OSS BSD-3-Clause 2026 https://github.com/ServiceStack/ServiceStack O/YkmuxTrsTH+YGs8I9+/ipPvS5c8YIvTBsxtfB5bzusvWEclq+tyFbI54K152sn5sv2Z2q1IH6JerY0l76YhIxmCyuz5q99my5T2zUNl4IRuFHfO7226sPIOxH6G4+X82k2JHL+O0wJzqrpLN52+z17SZK95tkfdKkx6b+79c4=");
+    public static void RegisterKey()
+    {
+        const string ossLicense = "OSS BSD-3-Clause 2026 https://github.com/ServiceStack/ServiceStack O/YkmuxTrsTH+YGs8I9+/ipPvS5c8YIvTBsxtfB5bzusvWEclq+tyFbI54K152sn5sv2Z2q1IH6JerY0l76YhIxmCyuz5q99my5T2zUNl4IRuFHfO7226sPIOxH6G4+X82k2JHL+O0wJzqrpLN52+z17SZK95tkfdKkx6b+79c4=";
+        var configuredLicense = Environment.GetEnvironmentVariable("SERVICESTACK_LICENSE");
+        ServiceStack.Licensing.RegisterLicense(
+            string.IsNullOrWhiteSpace(configuredLicense) ? ossLicense : configuredLicense);
+    }
 }
