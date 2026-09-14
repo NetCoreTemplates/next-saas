@@ -711,12 +711,12 @@ WHERE Id = @Id
         var periodStart = reset switch {
             MeterReset.Never => DateTime.UnixEpoch,
             MeterReset.CalendarMonth => new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-            _ => subscription.PeriodStart,
+            _ => AsUtc(subscription.PeriodStart),
         };
         var periodEnd = reset switch {
-            MeterReset.Never => DateTime.MaxValue,
+            MeterReset.Never => DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc),
             MeterReset.CalendarMonth => periodStart.AddMonths(1),
-            _ => subscription.PeriodEnd,
+            _ => AsUtc(subscription.PeriodEnd),
         };
         if (quota.RolloverEnabled && allowance != null)
         {
@@ -761,6 +761,13 @@ WHERE Id = @Id
         });
         return period;
     }
+
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+    };
 
     private static void EnsureCurrentFreePeriod(IDbConnection db, BillingSubscription subscription)
     {
