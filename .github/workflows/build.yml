@@ -25,6 +25,9 @@ jobs:
           --health-retries 10
     env:
       TEST_POSTGRES_CONNECTION: Host=127.0.0.1;Port=5432;Database=next_saas_tests;Username=postgres;Password=postgres
+      # Available on trusted branch builds. Fork PRs use the checked-in OSS key
+      # registered by the test assembly because GitHub withholds repository secrets.
+      SERVICESTACK_LICENSE: ${{ secrets.SERVICESTACK_LICENSE }}
     steps:
       - name: checkout
         uses: actions/checkout@v5
