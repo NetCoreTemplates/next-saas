@@ -328,12 +328,20 @@ public class SaasManager(SaasConfig config) : ISaasManager
             Units = request.Units, IdempotencyKey = request.IdempotencyKey, Source = "api",
             MetadataJson = request.MetadataJson, RecordedDate = now, RecordedBy = userId,
         });
-        var updated = db.ExecuteSql(@"UPDATE UsageAggregate
-SET UsedUnits = UsedUnits + @Units,
-    PeakUnits = CASE WHEN PeakUnits > UsedUnits + @Units THEN PeakUnits ELSE UsedUnits + @Units END,
-    LastEventDate = @Now, ModifiedDate = @Now, ModifiedBy = @UserId
-WHERE Id = @Id
-  AND (@HardLimit = 0 OR @Allowance IS NULL OR UsedUnits + ReservedUnits + @Units <= @Allowance)",
+        var dialect = db.GetDialectProvider();
+        var table = dialect.GetQuotedTableName(typeof(UsageAggregate));
+        string Col(string name) => dialect.GetQuotedColumnName(name);
+        var used = Col(nameof(UsageAggregate.UsedUnits));
+        var reserved = Col(nameof(UsageAggregate.ReservedUnits));
+        var peak = Col(nameof(UsageAggregate.PeakUnits));
+        var updated = db.ExecuteSql($@"UPDATE {table}
+SET {used} = {used} + @Units,
+    {peak} = CASE WHEN {peak} > {used} + @Units THEN {peak} ELSE {used} + @Units END,
+    {Col(nameof(UsageAggregate.LastEventDate))} = @Now,
+    {Col(nameof(UsageAggregate.ModifiedDate))} = @Now,
+    {Col(nameof(UsageAggregate.ModifiedBy))} = @UserId
+WHERE {Col(nameof(UsageAggregate.Id))} = @Id
+  AND (@HardLimit = 0 OR @Allowance IS NULL OR {used} + {reserved} + @Units <= @Allowance)",
             new { request.Units, Now = now, UserId = userId, aggregate.Id,
                 HardLimit = period.Enforcement == QuotaEnforcement.HardLimit ? 1 : 0, period.Allowance });
         if (updated != 1)
@@ -374,10 +382,17 @@ WHERE Id = @Id
         };
         using var tx = db.OpenTransaction();
         db.Insert(reservation);
-        var updated = db.ExecuteSql(@"UPDATE UsageAggregate
-SET ReservedUnits = ReservedUnits + @Units, ModifiedDate = @Now, ModifiedBy = @UserId
-WHERE Id = @Id
-  AND (@HardLimit = 0 OR @Allowance IS NULL OR UsedUnits + ReservedUnits + @Units <= @Allowance)",
+        var dialect = db.GetDialectProvider();
+        var table = dialect.GetQuotedTableName(typeof(UsageAggregate));
+        string Col(string name) => dialect.GetQuotedColumnName(name);
+        var used = Col(nameof(UsageAggregate.UsedUnits));
+        var reserved = Col(nameof(UsageAggregate.ReservedUnits));
+        var updated = db.ExecuteSql($@"UPDATE {table}
+SET {reserved} = {reserved} + @Units,
+    {Col(nameof(UsageAggregate.ModifiedDate))} = @Now,
+    {Col(nameof(UsageAggregate.ModifiedBy))} = @UserId
+WHERE {Col(nameof(UsageAggregate.Id))} = @Id
+  AND (@HardLimit = 0 OR @Allowance IS NULL OR {used} + {reserved} + @Units <= @Allowance)",
             new { Units = units, Now = now, UserId = userId, aggregate.Id,
                 HardLimit = usage.Enforcement == QuotaEnforcement.HardLimit ? 1 : 0, usage.Allowance });
         if (updated != 1)
@@ -477,13 +492,21 @@ WHERE Id = @Id
             WorkspaceId = workspace.Id, UsagePeriodId = period.Id, MeterKey = meterKey, Units = delta,
             IdempotencyKey = idempotencyKey, Source = source, EventType = "gauge-adjustment", RecordedDate = now, RecordedBy = userId,
         });
-        var updated = db.ExecuteSql(@"UPDATE UsageAggregate
-SET UsedUnits = UsedUnits + @Delta,
-    PeakUnits = CASE WHEN PeakUnits > UsedUnits + @Delta THEN PeakUnits ELSE UsedUnits + @Delta END,
-    LastEventDate = @Now, ModifiedDate = @Now, ModifiedBy = @UserId
-WHERE Id = @Id
-  AND UsedUnits + @Delta >= 0
-  AND (@HardLimit = 0 OR @Allowance IS NULL OR UsedUnits + ReservedUnits + @Delta <= @Allowance)",
+        var dialect = db.GetDialectProvider();
+        var table = dialect.GetQuotedTableName(typeof(UsageAggregate));
+        string Col(string name) => dialect.GetQuotedColumnName(name);
+        var used = Col(nameof(UsageAggregate.UsedUnits));
+        var reserved = Col(nameof(UsageAggregate.ReservedUnits));
+        var peak = Col(nameof(UsageAggregate.PeakUnits));
+        var updated = db.ExecuteSql($@"UPDATE {table}
+SET {used} = {used} + @Delta,
+    {peak} = CASE WHEN {peak} > {used} + @Delta THEN {peak} ELSE {used} + @Delta END,
+    {Col(nameof(UsageAggregate.LastEventDate))} = @Now,
+    {Col(nameof(UsageAggregate.ModifiedDate))} = @Now,
+    {Col(nameof(UsageAggregate.ModifiedBy))} = @UserId
+WHERE {Col(nameof(UsageAggregate.Id))} = @Id
+  AND {used} + @Delta >= 0
+  AND (@HardLimit = 0 OR @Allowance IS NULL OR {used} + {reserved} + @Delta <= @Allowance)",
             new { Delta = delta, Now = now, UserId = userId, aggregate.Id,
                 HardLimit = usage.Enforcement == QuotaEnforcement.HardLimit && delta > 0 ? 1 : 0, usage.Allowance });
         if (updated != 1)
