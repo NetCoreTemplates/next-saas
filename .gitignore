@@ -2,6 +2,7 @@
 
 # dotnet
 .env
+videos/
 dist/
 App_Data/
 wwwroot/
