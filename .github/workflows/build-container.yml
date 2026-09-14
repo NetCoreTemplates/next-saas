@@ -79,7 +79,9 @@ jobs:
       - name: Install npm dependencies
         if: steps.check_client.outputs.client_exists == 'true'
         working-directory: ./MyApp.Client
-        run: npm ci
+        # Do not run the local-development database bootstrap while assembling
+        # an immutable client/container artifact.
+        run: npm ci --ignore-scripts
 
       - name: Build client
         if: steps.check_client.outputs.client_exists == 'true'

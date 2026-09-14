@@ -58,7 +58,9 @@ jobs:
       #       --store-password-in-clear-text
 
       - name: Install client dependencies
-        run: npm ci
+        # postinstall bootstraps a developer SQLite database; CI owns migration
+        # and empty-state verification explicitly in later steps.
+        run: npm ci --ignore-scripts
         working-directory: ./MyApp.Client
 
       - name: Build
