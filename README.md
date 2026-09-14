@@ -1,6 +1,6 @@
 # Next SaaS
 
-A production-oriented .NET 10 + ServiceStack + Next.js 16 template for self-serve B2B SaaS products.
+A production-oriented .NET 10 + ServiceStack + Next.js 16 template for self-serve B2B SaaS products
 
 The included Acme product is a deliberately small hosted document-storage and analytics service. Its file module exists to demonstrate tenant isolation, quota reservations, exact storage gauges, analytics, and lifecycle operations—not document parsing, ingestion, search, or RAG.
 
