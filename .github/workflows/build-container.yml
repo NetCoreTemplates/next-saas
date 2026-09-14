@@ -103,7 +103,7 @@ jobs:
       - name: Build and push Docker image
         run: |
           # MSBuild treats literal semicolons as property separators on the CLI.
-          dotnet publish MyApp/MyApp.csproj --os linux --arch x64 -c Release \
+          dotnet publish MyApp/MyApp.csproj -c Release \
             -p:ContainerRepository=${{ env.IMAGE }} \
             -p:ContainerRegistry=ghcr.io -p:ContainerImageTags="${{ env.VERSION }}%3Blatest" \
             -p:ContainerPort=8080
