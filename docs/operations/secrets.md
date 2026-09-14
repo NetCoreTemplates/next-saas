@@ -10,7 +10,7 @@ Production secrets belong in a platform secret manager or protected deployment e
 - `Stripe__SecretKey` or `STRIPE_SECRET_KEY`
 - `Stripe__WebhookSecret`
 - `SmtpConfig__UserName` and `SmtpConfig__Password`
-- `SERVICESTACK_LICENSE`
+- `SERVICESTACK_LICENSE` for commercial licenses only; the checked-in free OSS license must be registered in source code
 - deployment registry, SSH, and cloud-storage credentials
 - `APPSETTINGS_JSON` / `APPSETTINGS_JSON_BASE64` when using the included release workflow
 
@@ -25,6 +25,8 @@ In multi-instance production, use a shared protected key repository and configur
 ## Included GitHub/Kamal flow
 
 The release workflow reads `APPSETTINGS_JSON` from GitHub Actions secrets, base64-encodes it for transport, and passes `APPSETTINGS_JSON_BASE64` through Kamal. `.kamal/secrets` maps the value into the container. Before ASP.NET Core constructs its host, `Program.cs` validates and flattens that JSON into the normal double-underscore configuration keys, so Hosting Startup modules see the selected database and policy immediately. The decoded document is not written into the image or container filesystem.
+
+ServiceStack free and OSS keys cannot be supplied through the `SERVICESTACK_LICENSE` environment variable. This template registers its OSS key in `Configure.AppHost.cs`, including in tests and fork builds. Leave the GitHub secret absent for OSS deployments. A derived commercial application may set the secret to its commercial key, which takes precedence over the checked-in fallback.
 
 Alternatively, pass individual environment variables from the target platform. Avoid maintaining the same secret in both a JSON bundle and separate variables unless precedence and rotation are explicit.
 

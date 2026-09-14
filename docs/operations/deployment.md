@@ -38,7 +38,7 @@ Kamal bootstrap installs Docker when needed and Kamal Proxy obtains the TLS cert
 | `KAMAL_DEPLOY_HOST` | Public hostname without scheme or path |
 | `SSH_PRIVATE_KEY` | Private key authorized on the deployment host |
 | `APPSETTINGS_JSON` | Complete production configuration, including PostgreSQL, SMTP, Stripe, and product settings |
-| `SERVICESTACK_LICENSE` | ServiceStack runtime license |
+| `SERVICESTACK_LICENSE` | Optional commercial ServiceStack runtime license; do not set it for the checked-in OSS license |
 
 GitHub supplies `GITHUB_TOKEN` to publish and pull the repository's GHCR image. The package must be accessible to the deployment workflow; private packages are authenticated with that token.
 
