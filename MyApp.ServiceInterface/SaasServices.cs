@@ -831,7 +831,10 @@ WHERE Id = @Id
             UsedUnits = aggregate.UsedUnits, ReservedUnits = aggregate.ReservedUnits, PeakUnits = aggregate.PeakUnits,
             Allowance = period.Allowance, RemainingUnits = remaining,
             PercentUsed = period.Allowance is > 0 ? Math.Round(aggregate.UsedUnits * 100d / period.Allowance.Value, 2) : 0,
-            PeriodStart = period.PeriodStart, PeriodEnd = period.PeriodEnd, Enforcement = period.Enforcement,
+            // PostgreSQL materializes timestamp values without a DateTime Kind in
+            // some OrmLite projections. Keep response values safe to reuse in
+            // timestamp-with-time-zone predicates throughout the usage workflow.
+            PeriodStart = AsUtc(period.PeriodStart), PeriodEnd = AsUtc(period.PeriodEnd), Enforcement = period.Enforcement,
             Kind = period.Kind, Reset = period.Reset, Source = period.Source,
         };
     }
