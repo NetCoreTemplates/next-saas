@@ -7,6 +7,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <RootNamespace>MyApp</RootNamespace>
     <PublishProfile>DefaultContainer</PublishProfile>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,18 +28,27 @@
     <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="10.*" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.*" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.11.0" />
+    <PackageReference Include="Stripe.net" Version="52.*" />
     <PackageReference Include="ServiceStack" Version="10.*" />
     <PackageReference Include="ServiceStack.Mvc" Version="10.*" />
+    <PackageReference Include="ServiceStack.OpenApi.Microsoft" Version="10.*" />
     <PackageReference Include="ServiceStack.Server" Version="10.*" />
     <PackageReference Include="ServiceStack.Extensions" Version="10.*" />
     <PackageReference Include="ServiceStack.Ormlite.Sqlite.Data" Version="10.*" />
+    <PackageReference Include="ServiceStack.OrmLite.PostgreSQL" Version="10.*" />
     <PackageReference Include="ServiceStack.Jobs" Version="10.*" />
   </ItemGroup>
 
   <PropertyGroup>
     <DefaultItemExcludes>$(DefaultItemExcludes);App_Data\**;node_modules\**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Update="plans.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <Target Name="CreateWwwrootFolderBuild" AfterTargets="AfterBuild">
     <MakeDir Directories="$(BuildDir)wwwroot" Condition="!Exists('$(BuildDir)wwwroot')" />

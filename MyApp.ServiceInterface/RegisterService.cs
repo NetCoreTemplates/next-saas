@@ -47,7 +47,7 @@ public class IdentityRegistrationValidator : AbstractValidator<Register>
     }
 }
 
-public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSender<ApplicationUser> emailSender, AppConfig appConfig)
+public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSender<ApplicationUser> emailSender, AppConfig appConfig, SaasConfig saasConfig, ISaasManager saasManager)
     : IdentityRegisterServiceBase<ApplicationUser>(userManager)
 {
     string BaseUrl => appConfig.BaseUrl ?? Request.GetBaseUrl();
@@ -73,13 +73,20 @@ public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSen
         await RegisterNewUserAsync(session, newUser);
 
         var userId = await UserManager.GetUserIdAsync(newUser);
+        // Registration never grants access to an invited organization. The user must
+        // explicitly accept the signed, unexpired invitation after authenticating as
+        // the invited email address.
+        if (saasConfig.EnablePersonalWorkspaces)
+            saasManager.EnsurePersonalWorkspace(Db, userId, newUser.DisplayName, newUser.Email);
+
+        var returnUrl = SafeReturnUrl(request.Meta?.GetValueOrDefault("returnUrl"));
         var code = await UserManager.GenerateEmailConfirmationTokenAsync(newUser);
         code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
         var callbackUrl = BaseUrl.CombineWith(new ConfirmEmail
         {
             UserId = userId,
             Code = code,
-            ReturnUrl = Request.GetReturnUrl()
+            ReturnUrl = returnUrl
         }.ToGetUrl());
 
         await emailSender.SendConfirmationLinkAsync(newUser, newUser.Email, HtmlEncoder.Default.Encode(callbackUrl));
@@ -97,6 +104,13 @@ public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSen
         }
         
         return response;
+    }
+
+    public static string? SafeReturnUrl(string? returnUrl)
+    {
+        if (returnUrl.IsNullOrEmpty() || returnUrl![0] != '/' || returnUrl.StartsWith("//", StringComparison.Ordinal))
+            return null;
+        return Uri.TryCreate(returnUrl, UriKind.Relative, out _) ? returnUrl : null;
     }
 
     public async Task<object> Any(ConfirmEmail request)

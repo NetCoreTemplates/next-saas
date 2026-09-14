@@ -21,6 +21,7 @@ image: <%= ENV['IMAGE'] %>
 # Required for use of ASP.NET Core with Kamal-Proxy.
 env:
   clear:
+    ASPNETCORE_ENVIRONMENT: Production
     ASPNETCORE_FORWARDEDHEADERS_ENABLED: true
   # secrets from ./kamal/secrets
   secret:
@@ -43,6 +44,8 @@ proxy:
   host: <%= ENV['KAMAL_DEPLOY_HOST'] %>
   # kamal-proxy connects to your container over port 80, use `app_port` to specify a different port.
   app_port: 8080
+  healthcheck:
+    path: /up
 
 # Credentials for your image host.
 registry:

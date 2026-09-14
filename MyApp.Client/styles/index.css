@@ -14,8 +14,8 @@
   --color-accent-1: #fafafa;
   --color-accent-2: #eaeaea;
   --color-accent-7: #333;
-  --color-success: #0070f3;
-  --color-cyan: #79ffe1;
+  --color-success: #0b5cff;
+  --color-cyan: #86efcd;
 
   /* shadcn/ui colors - Light mode */
   --color-background: hsl(0 0% 100%);
@@ -24,7 +24,7 @@
   --color-card-foreground: hsl(222.2 84% 4.9%);
   --color-popover: hsl(0 0% 100%);
   --color-popover-foreground: hsl(222.2 84% 4.9%);
-  --color-primary: hsl(221.2 83.2% 43%);
+  --color-primary: #0b5cff;
   --color-primary-foreground: hsl(0 0% 100%);
   --color-secondary: hsl(210 40% 96.1%);
   --color-secondary-foreground: hsl(222.2 47.4% 11.2%);
@@ -63,10 +63,29 @@
   --shadow-medium: 0 8px 30px rgb(0 0 0 / 0.12);
 
   /* Border radius */
-  --radius-lg: 0.5rem;
-  --radius-md: calc(0.5rem - 2px);
-  --radius-sm: calc(0.5rem - 4px);
+  --radius-lg: 0.875rem;
+  --radius-md: 0.625rem;
+  --radius-sm: 0.375rem;
 }
+
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+html { scroll-behavior: smooth; }
+body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+::selection { background: rgba(11,92,255,.22); color: inherit; }
+
+.enterprise-grid {
+  background-image: linear-gradient(rgba(26,54,93,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(26,54,93,.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(to bottom, black 35%, transparent 95%);
+}
+.dark .enterprise-grid { background-image: linear-gradient(rgba(134,239,205,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(134,239,205,.06) 1px, transparent 1px); }
+.surface-shadow { box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 24px 64px rgba(16,24,40,.10); }
+.metric-stripes { background-image: repeating-linear-gradient(135deg, rgba(11,92,255,.08) 0, rgba(11,92,255,.08) 1px, transparent 1px, transparent 7px); }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.animate-rise { animation: rise .7s cubic-bezier(.2,.75,.25,1) both; }
+.animate-rise-delay { animation: rise .7s .12s cubic-bezier(.2,.75,.25,1) both; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .animate-rise,.animate-rise-delay { animation: none; } }
 
 @theme dark {
   /* shadcn/ui colors - Dark mode */

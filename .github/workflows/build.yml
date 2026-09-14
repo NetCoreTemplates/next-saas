@@ -9,6 +9,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: next_saas_tests
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d next_saas_tests"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_CONNECTION: Host=127.0.0.1;Port=5432;Database=next_saas_tests;Username=postgres;Password=postgres
     steps:
       - name: checkout
         uses: actions/checkout@v5
@@ -17,6 +33,13 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: MyApp.Client/package-lock.json
 
       - name: Restore NuGet packages
         run: dotnet restore MyApp.slnx
@@ -34,18 +57,23 @@ jobs:
       #       --password "$NUGET_API_KEY" \
       #       --store-password-in-clear-text
 
-      - name: build
-        run: dotnet build --no-restore
-        working-directory: .
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: ./MyApp.Client
+
+      - name: Build
+        run: dotnet build MyApp.slnx --no-restore
+
+      - name: Validate operational scripts
+        run: bash -n scripts/*.sh
 
       - name: test
-        run: |
-          dotnet test
-          if [ $? -eq 0 ]; then
-            echo TESTS PASSED
-          else
-            echo TESTS FAILED
-            exit 1
-          fi
-        working-directory: ./MyApp.Tests
+        run: dotnet test MyApp.slnx --no-build --no-restore
 
+      - name: Client typecheck and tests
+        run: npm run typecheck && npm run test:run
+        working-directory: ./MyApp.Client
+
+      - name: Static client export
+        run: npm run build
+        working-directory: ./MyApp.Client

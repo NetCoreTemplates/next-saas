@@ -1,15 +1,19 @@
 ﻿@inherits Microsoft.AspNetCore.Mvc.Razor.RazorPage<TModel>
+@inject MyApp.ServiceInterface.ProductConfig Product
 <!doctype html>
 <html lang="en" class="h-full">
 @{
     var dev = HostContext.AppHost.IsDevelopmentEnvironment();
+    var mainContainerClass = ViewData["MainContainerClass"]?.ToString() ?? "max-w-7xl mx-auto px-5";
+    var mainContentClass = ViewData["MainContentClass"]?.ToString() ?? "max-w-5xl";
+    var hideFooter = ViewData["HideFooter"] is true;
 }
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg" href="/assets/img/logo.svg">
-    <title>@ViewData["Title"] - My App</title>
-    <link rel="stylesheet" href="/css/app.css">
+    <title>@ViewData["Title"] - @Product.ProductName</title>
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true">
     <link rel="stylesheet" href="/assets/css/typography.css">
 
     @Html.ImportMap(new()
@@ -40,15 +44,18 @@
 
 <div class="min-h-screen">
   <main>
-    <div class="max-w-7xl mx-auto px-5">
-    <div class="max-w-5xl">
+    <div class="@mainContainerClass">
+    <div class="@mainContentClass">
         @RenderBody()
     </div>
     </div>
   </main>
 </div>
 
-@await Html.PartialAsync("Footer")
+@if (!hideFooter)
+{
+    @await Html.PartialAsync("Footer")
+}
 
 <script type="module">
 import { init } from "app.mjs"

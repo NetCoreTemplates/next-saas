@@ -5,7 +5,7 @@ using ServiceStack.NativeTypes.TypeScript;
 
 namespace MyApp;
 
-public class AppHost() : AppHostBase("MyApp"), IHostingStartup
+public class AppHost() : AppHostBase("Acme"), IHostingStartup
 {
     public void Configure(IWebHostBuilder builder) => builder
         .ConfigureServices((Action<WebHostBuilderContext, IServiceCollection>)((context, services) => {

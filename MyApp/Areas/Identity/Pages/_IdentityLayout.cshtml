@@ -1,0 +1,35 @@
+@inject MyApp.ServiceInterface.ProductConfig Product
+@{
+    Layout = "/Pages/Shared/_Layout.cshtml";
+    ViewData["MainContainerClass"] = "max-w-7xl mx-auto px-5 lg:px-8";
+    ViewData["MainContentClass"] = "max-w-none";
+    ViewData["HideFooter"] = true;
+    var hasSettingsNavigation = IsSectionDefined("SettingsNavigation");
+}
+
+<div class="identity-stage">
+    <div class="identity-grid" aria-hidden="true"></div>
+    <div class="identity-frame @(hasSettingsNavigation ? "identity-frame-settings" : "identity-frame-focused")">
+        @if (hasSettingsNavigation)
+        {
+            <aside class="identity-aside identity-settings-aside">
+                <a href="/" class="identity-aside-brand" aria-label="@Product.ProductName home">
+                    <span class="identity-mark identity-mark-inverse" aria-hidden="true">
+                        <span class="identity-mark-diamond"></span>
+                        <span class="identity-mark-dot"></span>
+                    </span>
+                    <span>@Product.ProductName</span>
+                </a>
+                @await RenderSectionAsync("SettingsNavigation")
+            </aside>
+        }
+
+        <section class="identity-content">
+            @RenderBody()
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    @await RenderSectionAsync("Scripts", required: false)
+}

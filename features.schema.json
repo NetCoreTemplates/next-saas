@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["generatedBoundary", "modules", "tableClassification"],
+  "properties": {
+    "generatedBoundary": { "type": "object" },
+    "modules": {
+      "type": "array",
+      "items": { "type": "object", "required": ["name", "routes", "tables"], "properties": { "name": { "type": "string" }, "routes": { "type": "array" }, "tables": { "type": "array" } } }
+    },
+    "tableClassification": { "type": "object", "required": ["global", "tenantOwned", "platformOperational"] }
+  }
+}

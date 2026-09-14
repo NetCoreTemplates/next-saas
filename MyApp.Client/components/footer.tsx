@@ -1,38 +1,27 @@
 
+import { product, productInitial } from '@/lib/product'
+
+const groups = [
+  { title: 'Product', links: [{ label: 'Knowledge bases', href: '/knowledge-bases' }, { label: 'Assistants', href: '/assistants' }] },
+  { title: 'Explore', links: [{ label: 'Search', href: '/search' }, { label: 'Analytics', href: '/analytics' }] },
+  { title: 'Company', links: [{ label: 'About', href: '/about' }, { label: 'Contact', href: '/contact' }] },
+  { title: 'Legal', links: [{ label: 'Privacy', href: product.privacyUrl }, { label: 'Terms', href: product.termsUrl }] },
+]
+
 const Footer = () => {
   return (
-    <footer className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 relative">
-      <div className="max-w-7xl mx-auto px-6 py-12 lg:py-20">
-
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-10">
-          <div className="text-center lg:text-left space-y-4">
-            <h3 className="text-4xl lg:text-6xl font-bold tracking-tight text-slate-900 dark:text-white">
-              <a href="https://react-templates.net" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                react templates .net
-              </a>
-            </h3>
-            <p className="text-lg text-slate-600 dark:text-slate-400 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-              Templates for the next generation of AI-assisted web applications.
-            </p>
+    <footer className="border-t border-slate-200 bg-white dark:border-white/10 dark:bg-[#07101f]">
+      <div className="mx-auto max-w-7xl px-5 py-14 lg:px-8">
+        <div className="grid gap-10 border-b border-slate-200 pb-12 md:grid-cols-[1.4fr_2fr] dark:border-white/10">
+          <div>
+            <div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-[10px] bg-[#0b5cff] text-sm font-black text-white">{productInitial}</span><span className="font-bold tracking-[-.03em]">{product.name}</span></div>
+            <p className="mt-4 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400">{product.description}</p>
           </div>
-
-          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-            <a href="https://react-templates.net/docs"
-              className="inline-flex items-center justify-center px-8 py-3.5 text-base font-semibold text-white transition-all bg-slate-900 rounded-full hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-900/20 focus:ring-4 focus:ring-slate-900/20 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500/20 active:scale-95">
-              Read Documentation
-            </a>
-            <a href="https://github.com/NetCoreTemplates/next-static"
-              className="inline-flex items-center justify-center px-8 py-3.5 text-base font-semibold text-slate-900 transition-all bg-white border border-slate-200 rounded-full hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white dark:hover:border-slate-600 focus:ring-4 focus:ring-slate-200 dark:focus:ring-slate-800 active:scale-95">
-              View on GitHub
-            </a>
-          </div>
+          <nav aria-label="Footer" className="grid grid-cols-2 gap-8 text-sm sm:grid-cols-4">
+            {groups.map(group => <div key={group.title}><p className="font-semibold text-slate-950 dark:text-white">{group.title}</p>{group.links.map(link => <a key={link.href} href={link.href} className="mt-3 block text-slate-500 transition hover:text-[#0b5cff] dark:text-slate-400">{link.label}</a>)}</div>)}
+          </nav>
         </div>
-
-      </div>
-
-      <div className="absolute bottom-4 left-6 right-6 flex justify-between items-center text-xs text-slate-400 dark:text-slate-600">
-        <p>&copy; {new Date().getFullYear()} My App</p>
-        <a href="#" className="hover:text-slate-600 dark:hover:text-slate-400 transition-colors">Privacy Policy</a>
+        <div className="flex flex-col gap-3 pt-6 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between"><p>© {new Date().getFullYear()} {product.organizationName}</p><p>Built on ServiceStack · Next.js · Stripe</p></div>
       </div>
     </footer>
   )

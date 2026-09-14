@@ -31,7 +31,7 @@ function SignUpContent() {
 
     useEffect(() => {
         if (user) {
-            const redirect = getRedirect(Object.fromEntries(searchParams.entries())) || "/"
+            const redirect = getRedirect(Object.fromEntries(searchParams.entries())) || "/dashboard"
             router.replace(redirect)
         }
     }, [user])
@@ -46,7 +46,15 @@ function SignUpContent() {
             return
         }
 
-        const api = await client.api(new Register({displayName, email: userName, password, confirmPassword, autoLogin}))
+        const returnUrl = getRedirect(searchParams)
+        const api = await client.api(new Register({
+            displayName,
+            email: userName,
+            password,
+            confirmPassword,
+            autoLogin,
+            meta: returnUrl ? { returnUrl } : undefined,
+        }))
         if (api.succeeded) {
             await revalidate()
             const redirectUrl = (api.response as RegisterResponse).redirectUrl
@@ -61,14 +69,11 @@ function SignUpContent() {
     return (
         <>
             <ApiStateContext.Provider value={client}>
-                <section className="mt-4 max-w-xl sm:shadow overflow-hidden sm:rounded-md">
+                <section className="overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(16,24,40,.10)] dark:border-white/10 dark:bg-[#0c1729]">
                     <form onSubmit={onSubmit} className="max-w-prose">
-                        <div className="shadow overflow-hidden sm:rounded-md">
+                        <div>
                             <ErrorSummary except="displayName,userName,password,confirmPassword"/>
-                            <div className="px-4 py-5 bg-white dark:bg-black space-y-6 sm:p-6">
-                                <h3 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100 leading-tight">
-                                    Create a new account.
-                                </h3>
+                            <div className="space-y-6 bg-white px-6 py-7 dark:bg-[#0c1729]">
                                 <div className="flex flex-col gap-y-4">
                                     <TextInput id="displayName" help="Your first and last name" autoComplete="name"
                                                value={displayName} onChange={setDisplayName}/>
@@ -80,10 +85,10 @@ function SignUpContent() {
                                     <TextInput id="confirmPassword" type="password" value={confirmPassword} onChange={setConfirmPassword}/>
                                 </div>
                             </div>
-                            <div className="pt-5 px-4 py-3 bg-gray-50 dark:bg-gray-900 text-right sm:px-6">
+                            <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-right dark:border-white/10 dark:bg-white/[.025]">
                                 <div className="flex justify-end">
                                     { client.loading ? <FormLoading className="flex-1"/> : null }
-                                    <PrimaryButton className="ml-3">Sign Up</PrimaryButton>
+                                    <PrimaryButton className="ml-3 !bg-[#0b5cff] !px-6 !py-3">Create organization</PrimaryButton>
                                 </div>
                             </div>
                         </div>

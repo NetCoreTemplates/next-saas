@@ -20,7 +20,20 @@ public class ConfigureBackgroundJobs : IHostingStartup
             services.AddTransient<SendEmailCommand>(c => new SendEmailCommand(
                 c.GetRequiredService<ILogger<SendEmailCommand>>(),
                 c.GetRequiredService<IBackgroundJobs>(),
-                c.GetRequiredService<SmtpConfig>()));
+                c.GetRequiredService<SmtpConfig>(),
+                c.GetRequiredService<ServiceStack.Data.IDbConnectionFactory>()));
+            services.AddTransient<ProcessStripeEventCommand>();
+            services.AddTransient<DeleteStoredFileCommand>();
+            services.AddTransient<ProcessWorkspaceLifecycleCommand>();
+            services.AddTransient<ProcessNotificationDeliveryCommand>();
+            services.AddTransient<ExpireUsageReservationsCommand>();
+            services.AddTransient<BuildUsageRollupsCommand>();
+            services.AddTransient<BuildSaasDailySnapshotCommand>();
+            services.AddTransient<QueueQuotaNotificationsCommand>();
+            services.AddTransient<ProcessDueWorkspaceLifecyclesCommand>();
+            services.AddTransient<ExpireDataExportsCommand>();
+            services.AddTransient<ApplyDataRetentionCommand>();
+            services.AddTransient<ReconcileStripeSubscriptionsCommand>();
             
             services.AddPlugin(new CommandsFeature());
             services.AddPlugin(new BackgroundsJobFeature());
@@ -45,8 +58,14 @@ public class ConfigureBackgroundJobs : IHostingStartup
             }
             
             var jobs = services.GetRequiredService<IBackgroundJobs>();
-            // Example of registering a Recurring Job to run Every Hour
-            //jobs.RecurringCommand<MyCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<ExpireUsageReservationsCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<BuildUsageRollupsCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<BuildSaasDailySnapshotCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<QueueQuotaNotificationsCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<ProcessDueWorkspaceLifecyclesCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<ExpireDataExportsCommand>(Schedule.Hourly);
+            jobs.RecurringCommand<ApplyDataRetentionCommand>(Schedule.Daily);
+            jobs.RecurringCommand<ReconcileStripeSubscriptionsCommand>(Schedule.Hourly);
         });
 }
 

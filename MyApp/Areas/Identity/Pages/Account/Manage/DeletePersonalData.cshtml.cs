@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using MyApp.Data;
+using MyApp.ServiceInterface;
 
 namespace MyApp.Areas.Identity.Pages.Account.Manage
 {
@@ -18,15 +19,18 @@ namespace MyApp.Areas.Identity.Pages.Account.Manage
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<DeletePersonalDataModel> _logger;
+        private readonly IAccountDeletionManager _accountDeletion;
 
         public DeletePersonalDataModel(
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ILogger<DeletePersonalDataModel> logger)
+            ILogger<DeletePersonalDataModel> logger,
+            IAccountDeletionManager accountDeletion)
         {
             _userManager = userManager;
             _signInManager = signInManager;
             _logger = logger;
+            _accountDeletion = accountDeletion;
         }
 
         /// <summary>
@@ -57,6 +61,8 @@ namespace MyApp.Areas.Identity.Pages.Account.Manage
         /// </summary>
         public bool RequirePassword { get; set; }
 
+        public List<string> OwnedOrganizations { get; set; } = [];
+
         public async Task<IActionResult> OnGet()
         {
             var user = await _userManager.GetUserAsync(User);
@@ -66,6 +72,7 @@ namespace MyApp.Areas.Identity.Pages.Account.Manage
             }
 
             RequirePassword = await _userManager.HasPasswordAsync(user);
+            OwnedOrganizations = _accountDeletion.GetOwnedOrganizationNames(user.Id);
             return Page();
         }
 
@@ -78,6 +85,13 @@ namespace MyApp.Areas.Identity.Pages.Account.Manage
             }
 
             RequirePassword = await _userManager.HasPasswordAsync(user);
+            OwnedOrganizations = _accountDeletion.GetOwnedOrganizationNames(user.Id);
+            if (OwnedOrganizations.Count > 0)
+            {
+                ModelState.AddModelError(string.Empty,
+                    "Transfer ownership or delete every organization you own before deleting your account.");
+                return Page();
+            }
             if (RequirePassword)
             {
                 if (!await _userManager.CheckPasswordAsync(user, Input.Password))
@@ -86,6 +100,11 @@ namespace MyApp.Areas.Identity.Pages.Account.Manage
                     return Page();
                 }
             }
+
+            // Revoke organization access and credentials before deleting Identity.
+            // If Identity deletion unexpectedly fails, the account remains safe but
+            // no longer has customer or support access.
+            _accountDeletion.RemoveSaasAccess(user.Id);
 
             var result = await _userManager.DeleteAsync(user);
             var userId = await _userManager.GetUserIdAsync(user);

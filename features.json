@@ -1,0 +1,23 @@
+{
+  "$schema": "./features.schema.json",
+  "generatedBoundary": {
+    "authoritative": "MyApp.ServiceModel",
+    "generatedClient": "MyApp.Client/lib/dtos.ts"
+  },
+  "modules": [
+    { "name": "entitlements", "routes": ["/saas/entitlements"], "tables": ["SaasPlanFeature", "CustomerEntitlementOverride"], "config": ["Saas.Features"], "tests": ["SaasManagerTests"] },
+    { "name": "metering", "routes": ["/saas/usage", "/saas/usage/analytics"], "tables": ["UsagePeriod", "UsageAggregate", "UsageEvent", "UsageReservation", "UsageDailyRollup"], "config": ["Saas.Meters", "Saas.QuotaWarningPercentages"], "jobs": ["ExpireUsageReservationsCommand", "BuildUsageRollupsCommand", "QueueQuotaNotificationsCommand"], "tests": ["SaasManagerTests"] },
+    { "name": "files", "routes": ["/saas/files"], "tables": ["StoredFile"], "config": ["FileStorage"], "entitlements": ["files.basic"], "meters": ["documents.stored", "storage.bytes", "documents.uploaded"], "jobs": ["DeleteStoredFileCommand"] },
+    { "name": "billing", "routes": ["/saas/billing/checkout", "/saas/billing/portal", "/saas/stripe/webhook"], "tables": ["BillingSubscription", "StripeEventInbox"], "config": ["Stripe", "Saas.EnableTrials", "Saas.PastDueGraceDays"], "jobs": ["ProcessStripeEventCommand"] },
+    { "name": "notifications", "routes": ["/saas/notifications"], "tables": ["NotificationPreference", "NotificationDelivery"], "config": ["Notifications"], "jobs": ["ProcessNotificationDeliveryCommand"] },
+    { "name": "audit", "routes": ["/saas/audit"], "tables": ["SaasAuditEvent"], "entitlements": ["audit.read"] },
+    { "name": "lifecycle", "routes": ["/saas/lifecycle"], "tables": ["WorkspaceLifecycleRequest", "DataExportArtifact", "WorkspaceRetentionPolicy", "DataRetentionRun"], "config": ["Saas.WorkspaceDeletionDelayDays", "Saas.ExportExpiryDays", "Saas.AnalyticsRetentionDays", "Saas.AuditRetentionDays", "Saas.NotificationRetentionDays", "Saas.DeletedFileRetentionDays", "Saas.LifecycleHistoryRetentionDays", "Saas.RetentionBatchSize", "Saas.EnableLegalHolds"], "jobs": ["ProcessWorkspaceLifecycleCommand", "ProcessDueWorkspaceLifecyclesCommand", "ExpireDataExportsCommand", "ApplyDataRetentionCommand"] },
+    { "name": "operations", "routes": ["/saas/admin/analytics", "/saas/admin/customers", "/saas/admin/operations"], "tables": ["SaasDailySnapshot", "SupportNote", "SupportAccessGrant"], "jobs": ["BuildSaasDailySnapshotCommand"] },
+    { "name": "workspaces", "routes": ["/saas/workspaces"], "tables": ["Workspace", "WorkspaceMember", "UserWorkspacePreference"] }
+  ],
+  "tableClassification": {
+    "global": ["SaasPlan", "SaasPlanVersion", "SaasPlanPrice", "SaasPlanFeature", "SaasPlanQuota"],
+    "tenantOwned": ["Workspace", "WorkspaceMember", "BillingSubscription", "UsagePeriod", "UsageAggregate", "UsageEvent", "UsageReservation", "UsageDailyRollup", "CustomerEntitlementOverride", "StoredFile", "NotificationPreference", "SupportNote", "SupportAccessGrant", "WorkspaceLifecycleRequest", "DataExportArtifact", "WorkspaceRetentionPolicy"],
+    "platformOperational": ["StripeEventInbox", "NotificationDelivery", "SaasAuditEvent", "SaasDailySnapshot", "UserWorkspacePreference", "DataRetentionRun"]
+  }
+}

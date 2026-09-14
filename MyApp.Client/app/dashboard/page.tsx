@@ -1,0 +1,33 @@
+'use client'
+
+import Link from 'next/link'
+import { ArrowUpRight, Bell, BookOpenCheck, CheckCircle2, Clock3, CreditCard, HardDrive, KeyRound, Sparkles } from 'lucide-react'
+import AppShell, { PageHeading, Panel, StatusPill } from '@/components/app-shell'
+import { ValidateAuth } from '@/lib/auth'
+import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
+
+function DashboardPage() {
+  const {data,error,loading}=useSaasDashboard()
+  if (loading) return <AppShell><LoadingPanel/></AppShell>
+  if (error) return <AppShell><Panel className="p-6 text-sm text-red-600">{error}</Panel></AppShell>
+  const documents=data?.usage?.find(x=>x.meterKey==='documents.stored')
+  const storage=data?.usage?.find(x=>x.meterKey==='storage.bytes')
+  const api=data?.usage?.find(x=>x.meterKey==='api.requests')
+  const storageLabel=(value?:number)=>{const n=value??0;return n>=1024**3?`${(n/1024**3).toFixed(1)} GB`:n>=1024**2?`${(n/1024**2).toFixed(1)} MB`:`${n.toLocaleString()} B`}
+  return <AppShell workspaceName={data?.workspace?.name}>
+    <PageHeading eyebrow="Organization overview" title={`Good morning, ${data?.workspace?.name || 'team'}`} description="A focused view of your documents, API usage, storage, and plan health." action={<div className="flex gap-2"><Link href="/notifications" className="relative grid h-10 w-10 place-items-center rounded-[10px] border border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-white/5"><Bell className="h-4 w-4"/>{!!data?.unreadNotifications&&<span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{data.unreadNotifications}</span>}</Link><Link href="/documents" className="inline-flex items-center gap-2 rounded-[10px] bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white">Open documents <ArrowUpRight className="h-4 w-4"/></Link></div>}/>
+    {data?.subscription?.accessMode&&data.subscription.accessMode!=='Full'&&<Panel className={`mb-5 p-4 text-sm ${data.subscription.accessMode==='Grace'?'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200':'border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200'}`}><strong>{data.subscription.accessMode} access.</strong> {data.subscription.accessReason}</Panel>}
+    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{[
+      ['Plan',data?.plan?.name||'Free',<CreditCard key="i" className="h-5 w-5"/>,<StatusPill key="s" tone="blue">{data?.subscription?.status}</StatusPill>],
+      ['Documents',documents?.usedUnits?.toLocaleString()||'0',<BookOpenCheck key="i" className="h-5 w-5"/>,<span key="s" className="text-xs text-slate-400">of {documents?.allowance?.toLocaleString()||'Unlimited'} stored</span>],
+      ['Storage',storageLabel(storage?.usedUnits),<HardDrive key="i" className="h-5 w-5"/>,<span key="s" className="text-xs text-slate-400">of {storage?.allowance?storageLabel(storage.allowance):'Unlimited'}</span>],
+      ['Period remaining',data?.subscription?.periodEnd?`${Math.max(0,Math.ceil((new Date(data.subscription.periodEnd).getTime()-Date.now())/86400000))} days`:'—',<Clock3 key="i" className="h-5 w-5"/>,<span key="s" className="text-xs text-emerald-600 dark:text-[#86efcd]">On track</span>]
+    ].map(([label,value,icon,meta])=><Panel key={label as string} className="p-5"><div className="flex items-center justify-between"><span className="text-xs font-medium text-slate-500">{label}</span><span className="text-slate-400">{icon}</span></div><p className="mt-5 text-2xl font-semibold tracking-[-.04em] text-slate-950 dark:text-white">{value}</p><div className="mt-2">{meta}</div></Panel>)}</div>
+    <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+      <Panel className="overflow-hidden"><div className="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-white/10"><div><h2 className="font-semibold tracking-[-.02em]">API activity</h2><p className="mt-1 text-xs text-slate-400">Current billing period</p></div><Link href="/usage" className="text-xs font-semibold text-[#0b5cff]">View report</Link></div><div className="p-6"><div className="flex items-end justify-between"><div><p className="text-3xl font-semibold tracking-[-.04em]">{api?.percentUsed||0}%</p><p className="mt-1 text-xs text-slate-400">of API request allowance consumed</p></div><StatusPill>{(api?.percentUsed||0)<80?'Healthy':'Review'}</StatusPill></div><div className="mt-7 h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-[#0b5cff] to-[#86efcd]" style={{width:`${Math.min(100,Math.max(1,api?.percentUsed||1))}%`}}/></div><div className="mt-7 grid grid-cols-7 items-end gap-2 border-b border-slate-200 pb-1 dark:border-white/10">{[34,48,41,64,53,78,69].map((h,i)=><div key={i} className="group flex h-32 items-end"><span className="w-full rounded-t-md bg-blue-100 transition group-hover:bg-[#0b5cff] dark:bg-blue-400/15" style={{height:`${h}%`}}/></div>)}</div><div className="mt-3 flex justify-between text-[10px] text-slate-400"><span>Week 1</span><span>Today</span></div></div></Panel>
+      <Panel className="p-6"><div className="flex items-center justify-between"><h2 className="font-semibold tracking-[-.02em]">Launch checklist</h2><Sparkles className="h-4 w-4 text-[#0b5cff]"/></div><div className="mt-6 space-y-5">{[['Organization created',true],['Upload a sample document',(documents?.usedUnits??0)>0],['Invite your team',false],['Choose a paid plan',data?.subscription?.status!=='Free']].map(([label,done],i)=><div key={label as string} className="flex items-start gap-3"><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${done?'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-[#86efcd]':'border border-slate-200 text-slate-400 dark:border-white/10'}`}>{done?<CheckCircle2 className="h-4 w-4"/>:i+1}</span><div><p className="text-sm font-medium">{label}</p>{!done&&<Link href={i===1?'/documents':i===2?'/team':'/pricing'} className="mt-1 inline-flex text-xs text-[#0b5cff]">Complete step</Link>}</div></div>)}</div><div className="mt-7 rounded-xl bg-[#091426] p-4 text-white"><KeyRound className="h-5 w-5 text-[#86efcd]"/><p className="mt-3 text-sm font-semibold">Automate document imports</p><p className="mt-1 text-xs leading-5 text-slate-400">Use API keys and typed contracts to connect your content pipeline.</p><a href="/scalar/v1" className="mt-3 inline-flex text-xs font-semibold text-[#86efcd]">Open API docs →</a></div></Panel>
+    </div>
+  </AppShell>
+}
+
+export default ValidateAuth(DashboardPage)

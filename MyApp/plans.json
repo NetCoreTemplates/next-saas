@@ -1,0 +1,74 @@
+[
+  {
+    "Code": "free",
+    "Name": "Free",
+    "Description": "For individuals evaluating secure document storage.",
+    "DisplayOrder": 0,
+    "Monthly": 0,
+    "Annual": 0,
+    "Documents": 100,
+    "StorageBytes": 524288000,
+    "ApiRequests": 1000,
+    "Seats": 1,
+    "Features": [
+      { "Key": "files.basic", "Name": "Secure file storage" },
+      { "Key": "analytics.basic", "Name": "Usage analytics" },
+      { "Key": "support.community", "Name": "Community support" }
+    ]
+  },
+  {
+    "Code": "pro",
+    "Name": "Pro",
+    "Description": "For small teams storing documents and monitoring usage.",
+    "DisplayOrder": 1,
+    "TrialDays": 14,
+    "Monthly": 4900,
+    "Annual": 49000,
+    "Documents": 10000,
+    "StorageBytes": 26843545600,
+    "ApiRequests": 100000,
+    "Seats": 5,
+    "Features": [
+      { "Key": "files.basic", "Name": "Secure file storage" },
+      { "Key": "analytics.basic", "Name": "Usage analytics" },
+      { "Key": "analytics.advanced", "Name": "Advanced analytics" },
+      { "Key": "api.access", "Name": "API access" }
+    ]
+  },
+  {
+    "Code": "business",
+    "Name": "Business",
+    "Description": "For organizations that need governance and operational controls.",
+    "DisplayOrder": 2,
+    "TrialDays": 14,
+    "Monthly": 19900,
+    "Annual": 199000,
+    "Documents": 100000,
+    "StorageBytes": 268435456000,
+    "ApiRequests": 1000000,
+    "Seats": 25,
+    "Features": [
+      { "Key": "files.basic", "Name": "Secure file storage" },
+      { "Key": "analytics.advanced", "Name": "Advanced analytics" },
+      { "Key": "api.access", "Name": "API access" },
+      { "Key": "audit.read", "Name": "Audit history" },
+      { "Key": "branding.custom", "Name": "Custom branding" }
+    ]
+  },
+  {
+    "Code": "enterprise",
+    "Name": "Enterprise",
+    "Description": "For regulated, private, and high-volume SaaS deployments.",
+    "DisplayOrder": 3,
+    "ContactSales": true,
+    "Monthly": 0,
+    "Annual": 0,
+    "Features": [
+      { "Key": "files.basic", "Name": "Secure file storage" },
+      { "Key": "analytics.advanced", "Name": "Advanced analytics" },
+      { "Key": "api.access", "Name": "API access" },
+      { "Key": "audit.read", "Name": "Audit history" },
+      { "Key": "branding.custom", "Name": "Custom branding" }
+    ]
+  }
+]

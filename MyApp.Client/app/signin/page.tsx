@@ -23,11 +23,12 @@ function SignInContent() {
     }
     const router = useRouter()
     const searchParams = useSearchParams()
+    const returnUrl = getRedirect(searchParams)
 
     const {user, revalidate} = appAuth()
     useEffect(() => {
         if (user) {
-            const redirect = getRedirect(Object.fromEntries(searchParams.entries())) || "/"
+            const redirect = getRedirect(Object.fromEntries(searchParams.entries())) || "/dashboard"
             router.replace(redirect)
         }
     }, [user]);
@@ -43,11 +44,11 @@ function SignInContent() {
     return (
         <>
             <ApiStateContext.Provider value={client}>
-                <section className="mt-4 max-w-xl sm:shadow overflow-hidden sm:rounded-md">
+                <section className="overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(16,24,40,.10)] dark:border-white/10 dark:bg-[#0c1729]">
                     <form onSubmit={onSubmit}>
-                        <div className="shadow overflow-hidden sm:rounded-md">
+                        <div>
                             <ErrorSummary except="userName,password"/>
-                            <div className="px-4 py-5 bg-white dark:bg-black space-y-6 sm:p-6">
+                            <div className="space-y-6 bg-white px-6 py-7 dark:bg-[#0c1729]">
                                 <div className="flex flex-col gap-y-4">
                                     <TextInput id="userName" help="Email you signed up with" autoComplete="email"
                                                value={userName} onChange={setUserName}/>
@@ -57,12 +58,12 @@ function SignInContent() {
                                 </div>
 
                                 <div>
-                                    <PrimaryButton>Log in</PrimaryButton>
+                                    <PrimaryButton className="w-full !bg-[#0b5cff] !py-3">Log in</PrimaryButton>
                                 </div>
 
                                 <div className="mt-8 text-sm">
                                     <p className="mb-3">
-                                        <Link className="font-semibold" href="/signup">Register as a new user</Link>
+                                        <Link className="font-semibold" href={returnUrl ? `/signup?redirect=${encodeURIComponent(returnUrl)}` : '/signup'}>Register as a new user</Link>
                                     </p>
                                 </div>
                             </div>
@@ -71,8 +72,8 @@ function SignInContent() {
                     </form>
                 </section>
             </ApiStateContext.Provider>
-            <div className="mt-8">
-                <h3 className="xs:block mr-4 leading-8 text-gray-500">Quick Links</h3>
+            <div className="mt-7 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-white/10 dark:bg-white/[.035]">
+                <h3 className="mb-3 text-xs font-semibold text-slate-500">Development accounts</h3>
                 <div className="flex flex-wrap max-w-lg gap-2">
                     <SecondaryButton onClick={() => setUser('admin@email.com')}>
                         admin@email.com

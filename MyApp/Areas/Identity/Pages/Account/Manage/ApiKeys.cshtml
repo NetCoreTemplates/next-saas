@@ -1,5 +1,9 @@
 ﻿@page
 @using Microsoft.AspNetCore.Html
+@using MyApp.ServiceModel
+@using ServiceStack.Data
+@using ServiceStack.OrmLite
+@inject IDbConnectionFactory DbFactory
 @{
     ViewData["Title"] = "API Keys";
     ViewData["ActivePage"] = ManageNavPages.ApiKeys;
@@ -13,7 +17,13 @@
 </div>
 
 @{
-    IHtmlContent ToProps() => Html.Raw(new {
-        info = HostContext.AppHost.GetPlugin<ApiKeysFeature>()?.GetApiKeyInfo(),
-    }.ToJson().HtmlEncode());
+    IHtmlContent ToProps()
+    {
+        using var db = DbFactory.Open();
+        var preference = db.SingleById<UserWorkspacePreference>(User.GetUserId());
+        return Html.Raw(new {
+            info = HostContext.AppHost.GetPlugin<ApiKeysFeature>()?.GetApiKeyInfo(),
+            workspaceId = preference?.ActiveWorkspaceId,
+        }.ToJson().HtmlEncode());
+    }
 }

@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useEffect } from "react"
+import React, { useContext, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth, Loading } from "@servicestack/react"
 import { client, Routes } from "./gateway"
 import { Authenticate } from "@/lib/dtos"
+import { AuthReadyContext } from "@/app/providers"
 
 export const Redirecting = () => {
   return <Loading className="py-2 pl-4">redirecting ...</Loading>
@@ -12,32 +13,40 @@ export const Redirecting = () => {
 
 type ValidateAuthProps = {
   role?: string
+  roles?: string[]
   permission?: string
   redirectTo?: string
 }
 export function ValidateAuth<TOriginalProps extends {}>(Component:React.FC<TOriginalProps>, validateProps? :ValidateAuthProps) {
-    let { role, permission, redirectTo } = validateProps ?? {}
+    let { role, roles, permission, redirectTo } = validateProps ?? {}
     const compWithProps: React.FC<TOriginalProps> = (props) => {
         const router = useRouter()
         const pathname = usePathname()
+        const authReady = useContext(AuthReadyContext)
         const authProps = useAuth()
-        const { user, isAuthenticated, hasRole } = authProps
+        const { user, isAuthenticated, hasRole, hasPermission } = authProps
+        const target = redirectTo ?? pathname
+        const shouldRedirect = () => !isAuthenticated
+            ? Routes.signin(target)
+            : role && !hasRole(role)
+                ? Routes.forbidden()
+                : roles?.length && !roles.some(x => hasRole(x))
+                    ? Routes.forbidden()
+                : permission && !hasPermission(permission)
+                    ? Routes.forbidden()
+                    : null
+
         useEffect(() => {
+            if (!authReady) return
             const goTo = shouldRedirect()
             if (goTo) {
                 router.replace(goTo)
             }
-        }, [user])
+        }, [authReady, user, pathname, router])
 
-        redirectTo ??= pathname
-
-        const shouldRedirect = () => !isAuthenticated
-            ? Routes.signin(redirectTo)
-            : role && !hasRole(role)
-                ? Routes.forbidden()
-                : permission && !hasRole(permission)
-                    ? Routes.forbidden()
-                    : null;
+        if (!authReady) {
+            return <Redirecting />
+        }
 
         if (shouldRedirect()) {
             return <Redirecting />

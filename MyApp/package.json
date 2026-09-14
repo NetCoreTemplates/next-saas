@@ -11,6 +11,6 @@
         "revert:last": "dotnet run --AppTasks=migrate.revert:last",
         "revert:all": "dotnet run --AppTasks=migrate.revert:all",
         "rerun:last": "npm run revert:last && npm run migrate",
-        "regen:bookings": "npx okai Bookings.d.ts"
+        "regen:contracts": "npx get-dtos ts"
     }
 }

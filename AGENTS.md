@@ -1,606 +1,236 @@
-# CLAUDE.md
+# Agent guide: Next SaaS
 
-This file provides guidance to Claude Code (claude.ai/code) and other Agents when working with code in this repository.
+This repository is a full-stack .NET 10, ServiceStack, Next.js 16, React 19, TypeScript, OrmLite, ASP.NET Core Identity, and Stripe Billing template.
 
-## Project Overview
+Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows.
 
-A full-stack .NET 10 + React 19 + Next.js template combining ServiceStack backend with Next.js static site generation. Uses ASP.NET Core Identity for auth, OrmLite for application data, and Entity Framework Core for Identity data management.
+## Product boundary
 
-## Common Commands
+This template is for subscription SaaS and API products. It includes workspaces, memberships, plans, quotas, usage, Stripe subscriptions, API keys, customer self-service, and administration.
 
-### Development
+It is not a physical-product commerce template. Do not add carts, inventory, shipping, fulfillment, marketplace payouts, or Stripe Connect unless a derived product explicitly needs them.
+
+The visible `Acme` product is reference branding for a hosted document-storage, grounded AI, search, and analytics service. `MyApp` namespaces remain intentionally generic for template generation.
+
+Use **Organization** in all customer-facing UI and copy. The internal domain, database, DTO, and service names intentionally remain `Workspace` for template compatibility.
+
+## Architectural invariants
+
+1. ASP.NET Core is the only production runtime.
+2. Next.js produces a static export. Do not add request-time React Server Components, Route Handlers, or Server Actions.
+3. All dynamic behavior is a typed ServiceStack API.
+4. C# request and response DTOs are authoritative. Regenerate `MyApp.Client/lib/dtos.ts` after contract changes.
+5. Stripe owns payment collection, invoices, credits, discounts, taxes, Products, Prices, Customers, and Subscriptions.
+6. The application owns workspaces, plan mappings, entitlements, quotas, the enforcement ledger, customer overrides, and the local Stripe projection.
+7. Never query Stripe on a normal API authorization or quota path.
+8. Never put Stripe secret or webhook keys in browser code.
+9. Published plan versions are immutable. Create a draft version for changes.
+10. Customer deletion or payment failure never deletes product data; it changes access policy.
+
+## Configuration ownership
+
+Keep configuration in the correct scope:
+
+- deployment-wide behavior belongs under `Saas` or `Stripe` in `MyApp/appsettings.json` and environment overrides;
+- plan versions, features, quota amounts, display order, and Stripe Price mappings belong in the RDBMS;
+- customer-specific exceptions belong in `CustomerEntitlementOverride` with actor, reason, and validity window.
+
+Effective entitlement precedence is customer override, pinned plan version, published Free plan, then global fallback.
+
+Global JSON configuration is read-only in Admin UI. It should remain reviewable infrastructure configuration.
+
+## Key files
+
+```text
+PLAN.md                                      product and architecture decisions
+README.md                                    setup, Stripe, usage, and operations guide
+MyApp.ServiceModel/Saas.cs                   domain entities and API contracts
+MyApp.ServiceInterface/SaasServices.cs       workspace, usage, billing, and admin policy
+MyApp/Configure.Saas.cs                      dependency setup and Stripe SDK gateway
+MyApp/Migrations/Migration1001.cs            SaaS schema and default plan seed
+MyApp/appsettings.json                       global SaaS and Stripe policy
+MyApp/Configure.ApiKeys.cs                   API key scopes
+MyApp/Configure.BackgroundJobs.cs            job infrastructure
+MyApp/Configure.RequestLogs.cs                diagnostic request logging
+MyApp/Configure.Security.cs                   security headers, same-origin policy, auth throttling
+MyApp.Client/lib/dtos.ts                     generated TypeScript client; do not hand edit
+MyApp.Client/components/app-shell.tsx        authenticated application shell
+MyApp.Client/styles/index.css                design tokens and global styles
+MyApp.Client/app/admin/*/page.tsx             Operations Center static routes
+MyApp.Client/components/admin-center-page.tsx shared operator route content
+MyApp.Tests/SaasManagerTests.cs               quota and idempotency policy tests
+```
+
+## Common commands
+
+From the repository root:
 
 ```bash
-# Start both .NET and Vite dev servers (from project root)
+dotnet build MyApp.slnx
+dotnet test MyApp.slnx
+```
+
+Run the application:
+
+```bash
+cd MyApp
 dotnet watch
-
-# After making changes to C# DTOs restart .NET before regenerating TypeScript DTOs by running:
-cd MyApp.Client && npm run dtos
 ```
 
-### Building
+ASP.NET Core listens on `https://localhost:5001` and starts/proxies the Next.js development server.
+
+Frontend validation:
 
 ```bash
-# Build frontend (TypeScript + Vite)
-cd MyApp.Client && npm run build
-
-# Build backend (.NET)
-dotnet build
-
-# Build Tailwind CSS for Razor Pages
-cd MyApp && npm run ui:build
+cd MyApp.Client
+npm run typecheck
+npm run test:run
+npm run build
 ```
 
-### Testing
+Regenerate DTOs after any `MyApp.ServiceModel` request/response change:
 
 ```bash
-# Frontend tests (Vitest)
-cd MyApp.Client && npm run test        # Watch mode
-cd MyApp.Client && npm run test:ui     # UI mode
-cd MyApp.Client && npm run test:run    # Single run
-
-# Backend tests (NUnit)
-dotnet test
+cd MyApp.Client
+npm run dtos
 ```
 
-### Database Migrations
-```bash
-# Run all migrations (both EF Core and OrmLite)
-cd MyApp && npm run migrate
-
-# Entity Framework migrations (for changes to Identity tables)
-dotnet ef migrations add MigrationName
-dotnet ef database update
-
-# Revert last migration
-cd MyApp && npm run revert:last
-
-# Drop and re-run last migration (useful during development)
-cd MyApp && npm run rerun:last
-```
-
-### AutoQuery CRUD Development (using okai)
+Run database migrations:
 
 ```bash
-# Create new AutoQuery CRUD feature with TypeScript data model
-npx okai init Table
-
-# Regenerate C# AutoQuery APIs and DB migration from .d.ts model
-npx okai Table.d.ts
-
-# Remove AutoQuery feature and all generated code
-npx okai rm Table.d.ts
+cd MyApp
+npm run migrate
 ```
 
-## Architecture
+Create a new OrmLite migration instead of editing an already shipped migration in a derived production application.
 
-### Hybrid Development/Production Model
+## Backend conventions
 
-**Development Mode:**
-- `dotnet watch` from MyApp starts .NET (port 5001) and Next.js dev server (port 3000), accessible via `https://localhost:5001`
-- ASP.NET Core proxies requests to Next.js dev server via `NodeProxy` (configured in [Program.cs](MyApp/Program.cs#L41))
-- Hot Module Replacement (HMR) enabled via WebSocket proxying using `MapNotFoundToNode`, `MapNextHmr`, `RunNodeProcess`, `MapFallbackToNode` in [Program.cs](MyApp/Program.cs)
+Service contracts live in `MyApp.ServiceModel`. Implement services in `MyApp.ServiceInterface`. Host/integration concerns such as the Stripe SDK live in `MyApp` behind interfaces defined by the service layer.
 
-**Production Mode:**
-- Next.js builds React app to `MyApp.Client/dist/`, which is copied to `MyApp/wwwroot/` when published
-- ASP.NET Core serves static files directly from `wwwroot` - no Node.js required
-- Fallback to `index.html` for client-side routing
-
-### Modular Startup Configuration
-
-AppHost uses .NET's `IHostingStartup` pattern to split configuration across multiple files in `MyApp/`:
-- [Configure.AppHost.cs](MyApp/Configure.AppHost.cs) - Main ServiceStack AppHost registration
-- [Configure.Auth.cs](MyApp/Configure.Auth.cs) - ServiceStack AuthFeature with ASP.NET Core Identity integration
-- [Configure.AutoQuery.cs](MyApp/Configure.AutoQuery.cs) - AutoQuery features and audit events
-- [Configure.Db.cs](MyApp/Configure.Db.cs) - Database setup (OrmLite for app data, EF Core for Identity)
-- [Configure.Db.Migrations.cs](MyApp/Configure.Db.Migrations.cs) - Runs OrmLite and EF DB Migrations and creates initial users
-- [Configure.BackgroundJobs.cs](MyApp/Configure.BackgroundJobs.cs) - Background job processing
-- [Configure.HealthChecks.cs](MyApp/Configure.HealthChecks.cs) - Health monitoring endpoint
-
-This pattern keeps [Program.cs](MyApp/Program.cs) clean and separates concerns. Each `Configure.*.cs` file is auto-registered via `[assembly: HostingStartup]` attribute.
-
-### Project Structure
-
-```
-MyApp/                         # .NET Backend (hosts both .NET and Next.js)
-├── Configure.*.cs             # Modular startup configuration
-├── Migrations/                # EF Core Identity migrations + OrmLite app migrations
-├── Pages/                     # Identity Auth Razor Pages
-└── wwwroot/                   # Production static files (from MyApp.Client/dist)
-
-MyApp.Client/                  # React Frontend
-├── app/                       # Next.js App Router pages
-├── components/                # React components
-├── lib/                       # Utilities and helpers
-│   ├── dtos.ts                # Auto-generated from C# (via `npm run dtos`)
-│   ├── gateway.ts             # ServiceStack JsonServiceClient
-│   └── utils.ts               # Utility functions
-├── public/                    # Static assets
-├── dist/                      # Build output (production)
-├── styles/                    # Tailwind CSS styles
-└── next.config.mjs            # Next.js config for dev mode
-
-MyApp.ServiceModel/            # DTOs & API contracts
-├── *.cs                       # C# Request/Response DTOs
-├── api.d.ts                   # TypeScript data models Schema
-└── *.d.ts                     # TypeScript data models for okai code generation
-
-MyApp.ServiceInterface/        # Service implementations
-├── Data/                      # EF Core DbContext and Identity models
-└── *Services.cs               # ServiceStack service implementations
-
-MyApp.Tests/                   # .NET tests (NUnit)
-├── IntegrationTest.cs         # API integration tests
-└── MigrationTasks.cs          # Migration task runner
-
-config/
-└── deploy.yml                 # Kamal deployment settings
-.github/
-└── workflows/
-    ├── build.yml              # CI build and test
-    ├── build-container.yml    # Container image build
-    └── release.yml            # Production deployment with Kamal
-```
-
-### Database Architecture
-
-**Dual ORM Strategy:**
-- **OrmLite**: All application data (faster, simpler, typed POCO ORM)
-- **Entity Framework Core**: ASP.NET Core Identity tables only (Users, Roles, etc.)
-
-Both use the same SQLite database by default (`App_Data/app.db`). Connection string in `appsettings.json`.
-
-**Migration Files:**
-- `MyApp/Migrations/20240301000000_CreateIdentitySchema.cs` - EF Core migration for Identity
-- `MyApp/Migrations/Migration1000.cs` - OrmLite migration for app tables (e.g., Booking)
-
-Run `npm run migrate` to execute both.
-
-### Authentication Flow
-
-1. ASP.NET Core Identity handles user registration/login via Razor Pages at `/Identity/*` routes
-2. ServiceStack AuthFeature integrates with Identity via `IdentityAuth.For<ApplicationUser>()` in [Configure.Auth.cs](MyApp/Configure.Auth.cs)
-3. Custom claims added via `AdditionalUserClaimsPrincipalFactory` and `CustomUserSession`
-4. ServiceStack services use `[ValidateIsAuthenticated]` and `[ValidateHasRole]` attributes for authorization (see [Bookings.cs](MyApp.ServiceModel/Bookings.cs))
-
-### ServiceStack .NET APIs
-
-ServiceStack APIs adopt a [DTOs-first approach utilizing message-based APIs](https://docs.servicestack.net/api-design). To create ServiceStack APIs create all related DTOs used in the API (aka Service Contracts) into a single file in the `MyApp.ServiceModel` project, e.g:
+Use explicit routes and marker interfaces:
 
 ```csharp
-//MyApp.ServiceModel/Bookings.cs
-
-public class GetBooking : IGet, IReturn<GetBookingResponse>
+[ValidateIsAuthenticated]
+[Route("/saas/widgets", "POST")]
+public class CreateWidget : IPost, IReturn<CreateWidgetResponse>
 {
-    [ValidateGreaterThan(0)]
-    public int Id { get; set; }
-}
-public class GetBookingResponse
-{
-    public Booking? Result { get; set; }
-    public ResponseStatus? ResponseStatus { get; set; }
+    [ValidateNotEmpty]
+    public string Name { get; set; } = "";
 }
 ```
 
-The response type of an API should be specified in the `IReturn<Response>` marker interface. APIs which don't return a response should implement `IReturnVoid` instead.
+Prefer declarative validation attributes. Enforce workspace membership and role inside the service because ASP.NET Identity roles and workspace roles are separate concepts.
 
-By convention, APIs return single results in a `T? Result` property, APIs returns multiple results of the same type in a `List<T> Results` property. Otherwise APIs returning results of different types should use intuitive property names in a flat structured Response DTO for simplicity.
+Use `DateTime.UtcNow` for persisted policy timestamps. Public identifiers should be opaque strings/UUIDs. Add unique constraints for idempotency and business invariants.
 
-These C# Server DTOs are used to generate the TypeScript `dtos.ts`.
+Use OrmLite for product data and EF Core only for ASP.NET Identity data. Use AutoQuery for conventional administrator-facing CRUD when it does not bypass a domain invariant.
 
-#### Validating APIs
+## Workspace and identity rules
 
-Any API Errors are automatically populated in the `ResponseStatus` property, inc. [Declarative Validation Attributes](https://docs.servicestack.net/declarative-validation) like `[ValidateGreaterThan]` and `[ValidateNotEmpty]` which validate APIs and return any error responses in `ResponseStatus`.
+- Every user receives a personal workspace lazily or at registration.
+- A `WorkspaceMember` controls product access.
+- Workspace roles are Owner, Admin, Billing, and Member.
+- Only platform operators use the ASP.NET Identity `Admin` role.
+- Do not place an API key into an interactive Identity session.
+- API-key calls resolve the acting user, then the user's workspace membership.
 
-#### Protecting APIs
+## Usage and quota rules
 
-The Type Validation Attributes below should be used to protect APIs:
+The immutable `UsageEvent` ledger is the source of truth. `UsageAggregate` is a transactional performance projection.
 
-- `[ValidateIsAuthenticated]` - Only Authenticated Users
-- `[ValidateIsAdmin]` - Only Admin Users
-- `[ValidateHasRole]` - Only Authenticated Users assigned with the specified role
-- `[ValidateApiKey]` - Only Users with a valid API Key
+Every usage write requires:
 
-```csharp
-//MyApp.ServiceModel/Bookings.cs
-[ValidateHasRole("Employee")]
-public class CreateBooking : ICreateDb<Booking>, IReturn<IdResponse>
-{
-   //...
-}
+- workspace;
+- meter key;
+- positive units;
+- an idempotency key unique within the workspace;
+- a current usage period;
+- the resolved effective allowance and enforcement mode.
+
+Hard limits reject the entire operation before writing a usage event. Replayed idempotency keys return the already accepted result and never consume twice.
+
+Free periods are calendar months in UTC. Paid periods follow the locally projected Stripe subscription boundaries.
+
+Request logs are diagnostics, not billing data. Rate limits protect short-term capacity, not commercial quotas.
+
+For a multi-step operation that can fail after admission, reserve units first, then finalize or release them. `UsageAggregate.ReservedUnits` exists for this extension.
+
+Always add tests for:
+
+- first usage acceptance;
+- idempotent replay;
+- exact-limit acceptance;
+- over-limit rejection;
+- override precedence;
+- period rollover;
+- concurrent writers when changing the aggregate algorithm.
+
+## Stripe rules
+
+Use the official Stripe .NET SDK through `IStripeBillingGateway`.
+
+- Checkout and Customer Portal are hosted by Stripe.
+- Validate the raw webhook body and `Stripe-Signature` before parsing.
+- Insert a unique `StripeEventInbox` row before acknowledging a new event.
+- Process the inbox through `ProcessStripeEventCommand` in ServiceStack Background Jobs.
+- Make event handling replay-safe and tolerant of out-of-order delivery.
+- Store only Stripe object identifiers and the local projection needed for authorization.
+- Do not store card or bank details.
+
+The checked-in application must remain useful without Stripe credentials. Free works; paid actions return descriptive configuration errors.
+
+Use Stripe-hosted invoice PDFs. Add `ServiceStack.Pdf` only when the product specifically requires a separate branded statement.
+
+## Frontend conventions
+
+The design thesis is “precision enterprise ledger”:
+
+- midnight navy operational surfaces;
+- porcelain content surfaces;
+- cobalt primary actions;
+- mint healthy-state signals;
+- restrained 10–16px corner radii;
+- dense but breathable information hierarchy;
+- system font stack and no runtime font dependency.
+
+Reuse `AppShell`, `PageHeading`, `Panel`, and `StatusPill`. Use Lucide icons for functional UI. Keep marketing pages in `Layout`; keep authenticated product pages in `AppShell` and wrap them with `ValidateAuth`.
+
+Fetch APIs with generated request classes:
+
+```tsx
+const client = useClient()
+const api = await client.api(new RecordUsage({
+  meterKey: 'api.requests',
+  units: 1,
+  idempotencyKey: crypto.randomUUID(),
+}))
 ```
 
-#### Primary HTTP Method
+Never duplicate secret-dependent business logic in the browser. It is acceptable for public pricing to include a matching static fallback so the static page remains meaningful while the API is unavailable; the API response replaces it when connected.
 
-APIs have a primary HTTP Method which if not specified uses HTTP **POST**. Use `IGet`, `IPost`, `IPut`, `IPatch` or `IDelete` to change the HTTP Verb except for AutoQuery APIs which have implied verbs for each CRUD operation.
+All routes must remain static-export compatible. Verify with `npm run build`.
 
-#### API Implementations
+## Administration
 
-ServiceStack API implementations should be added to `MyApp.ServiceInterface/`:
+`/admin` is the product-specific Operations Center overview. Focused static routes live under `/admin/*`; `/admin/plans` uses separate Plans and Coupons tabs. `/admin-ui` supplies ServiceStack user, jobs, request-log, and database administration.
 
-```csharp
-//MyApp.ServiceInterface/BookingServices.cs
-public class BookingServices(IAutoQueryDb autoquery) : Service
-{
-    public object Any(GetBooking request)
-    {
-        return new GetBookingResponse {
-            Result = base.Db.SingleById<Booking>(request.Id)
-                ?? throw HttpError.NotFound("Booking does not exist")
-        };
-    }
+Plan metadata and customer overrides are RDBMS-managed. Changes that alter customer contracts should use a draft-and-publish workflow. Do not mutate historical usage periods or published plan versions to “fix” a customer; create an audited override or migration.
 
-    // Example of overriding an AutoQuery API with a custom implementation 
-    public async Task<object> Any(QueryBookings request)
-    {
-        using var db = autoQuery.GetDb(request, base.Request);
-        var q = autoQuery.CreateQuery(request, base.Request, db);
-        return await autoQuery.ExecuteAsync(request, q, base.Request, db);        
-    }
-}
-```
+Keep webhook bodies out of request logs. Keep secrets and raw API keys out of logs and audit detail JSON.
 
-APIs can be implemented with **sync** or **async** methods using `Any` or its primary HTTP Method e.g. `Get`, `Post`. 
-The return type of an API implementation does not change behavior however returning `object` is recommended so its clear the Request DTO `IReturn<Response>` interface defines the APIs Response type and Service Contract.
+Cookie-authenticated mutations under `/saas` require a same-origin `Origin` or `Referer`; API-key calls are exempt from browser CSRF checks and remain credential-, membership-, feature-, quota-, and rate-limit protected. Sensitive authentication POST routes use the ASP.NET rate limiter. Keep both controls when adding authentication or customer mutation routes.
 
-The ServiceStack `Service` base class has convenience properties like `Db` to resolve an Open `IDbConnection` for that API and `base.Request` to resolve the `IRequest` context. All other dependencies required by the API should use constructor injection in a Primary Constructor.
+Personal account deletion is separate from organization deletion. Owners must transfer or delete owned organizations first. Account deletion must revoke organization memberships, API keys, notifications, active support grants, and the active-workspace preference before removing Identity.
 
-A ServiceStack API typically returns the Response DTO defined in its Request DTO `IReturn<Response>` or an Error but can also return any raw [custom Return Type](https://docs.servicestack.net/service-return-types) like `string`, `byte[]`, `Stream`, `IStreamWriter`, `HttpResult` and `HttpError`.
+## Definition of done
 
-### AutoQuery CRUD Pattern
+Before completing a change:
 
-ServiceStack's AutoQuery generates full CRUD APIs from declarative request DTOs. Example in [Bookings.cs](MyApp.ServiceModel/Bookings.cs):
-
-- `QueryBookings : QueryDb<Booking>`   → GET    /api/QueryBookings with filtering/sorting/paging
-- `CreateBooking : ICreateDb<Booking>` → POST   /api/CreateBooking
-- `UpdateBooking : IPatchDb<Booking>`  → PATCH  /api/UpdateBooking
-- `DeleteBooking : IDeleteDb<Booking>` → DELETE /api/DeleteBooking
-
-**No service implementation required** - AutoQuery handles it. Audit fields (`CreatedBy`, `ModifiedBy`, etc.) auto-populated via `[AutoApply(Behavior.AuditCreate)]` attributes.
-
-[AutoQuery CRUD Docs](https://react-templates.net/docs/autoquery/crud)
-
-### TypeScript DTO Generation
-
-After changing C# DTOs in `MyApp.ServiceModel/`, restart the .NET Server then run:
-```bash
-cd MyApp.Client && npm run dtos
-```
-
-This calls ServiceStack's `/types/typescript` endpoint and updates `dtos.ts` with type-safe client DTOs. The Vite dev server auto-reloads.
-
-### okai AutoQuery Code Generation
-
-The `npx okai` tool generates C# AutoQuery APIs and migrations from TypeScript data models (`.d.ts` files):
-
-1. **TypeScript data model** (`MyApp.ServiceModel/Bookings.d.ts`) defines the entity with decorators
-2. **C# AutoQuery APIs** (`MyApp.ServiceModel/Bookings.cs`) - auto-generated CRUD request/response DTOs
-3. **C# OrmLite migration** (`MyApp/Migrations/Migration1000.cs`) - auto-generated schema creation
-
-This enables rapid prototyping: edit the `.d.ts` model, run `npx okai Bookings.d.ts`, then `npm run migrate`.
-
-**Important:** The `.d.ts` files use special decorators (e.g., `@validateHasRole`, `@autoIncrement`) that map to C# attributes and .NET Types. The valid schema for these is defined in [api.d.ts](MyApp.ServiceModel/api.d.ts). Reference [Bookings.d.ts](MyApp.ServiceModel/Bookings.d.ts) for examples.
-
-### AutoQuery APIs
-
-[C# AutoQuery APIs](https://react-templates.net/docs/autoquery/querying) allow creating queryable C# APIs for RDBMS Tables with just a Request DTO definition, e.g:
-
-```csharp
-public class QueryBookings : QueryDb<Booking>
-{
-    public int? Id { get; set; }
-    public decimal? MinCost { get; set; }
-    public List<decimal>? CostBetween { get; set; }
-    public List<int>? Ids { get; set; }
-}
-```
-
-It uses these conventions to determine the behavior of each property filter:
-
-```csharp
-ImplicitConventions = new() {
-    {"%Above%",      "{Field} >  {Value}"},
-    {"Begin%",       "{Field} >  {Value}"},
-    {"%Beyond%",     "{Field} >  {Value}"},
-    {"%Over%",       "{Field} >  {Value}"},
-    {"%OlderThan",   "{Field} >  {Value}"},
-    {"%After%",      "{Field} >  {Value}"},
-    {"OnOrAfter%",   "{Field} >= {Value}"},
-    {"%From%",       "{Field} >= {Value}"},
-    {"Since%",       "{Field} >= {Value}"},
-    {"Start%",       "{Field} >= {Value}"},
-    {"%Higher%",     "{Field} >= {Value}"},
-    {"Min%",         "{Field} >= {Value}"},
-    {"Minimum%",     "{Field} >= {Value}"},
-    {"Behind%",      "{Field} <  {Value}"},
-    {"%Below%",      "{Field} <  {Value}"},
-    {"%Under%",      "{Field} <  {Value}"},
-    {"%Lower%",      "{Field} <  {Value}"},
-    {"%Before%",     "{Field} <  {Value}"},
-    {"%YoungerThan", "{Field} <  {Value}"},
-    {"OnOrBefore%",  "{Field} <  {Value}"},
-    {"End%",         "{Field} <  {Value}"},
-    {"Stop%",        "{Field} <  {Value}"},
-    {"To%",          "{Field} <  {Value}"},
-    {"Until%",       "{Field} <  {Value}"},
-    {"Max%",         "{Field} <  {Value}"},
-    {"Maximum%",     "{Field} <  {Value}"},
-
-    {"%GreaterThanOrEqualTo%", "{Field} >= {Value}"},
-    {"%GreaterThan%",          "{Field} >  {Value}"},
-    {"%LessThan%",             "{Field} <  {Value}"},
-    {"%LessThanOrEqualTo%",    "{Field} <  {Value}"},
-    {"%NotEqualTo",            "{Field} <> {Value}"},
-
-    {"Like%",        "UPPER({Field}) LIKE UPPER({Value})"},
-    {"%In",          "{Field} IN ({Values})"},
-    {"%Ids",         "{Field} IN ({Values})"},
-    {"%Between%",    "{Field} BETWEEN {Value1} AND {Value2}"},
-    {"%HasAll",      "{Value} & {Field} = {Value}"},
-    {"%HasAny",      "{Value} & {Field} > 0"},
-
-    {"%IsNull",      "{Field} IS NULL"},
-    {"%IsNotNull",   "{Field} IS NOT NULL"},
-};
-```
-
-Each convention key includes `%` wildcards to define where a DataModel field names can appear, either as a Prefix, Suffix or both. The convention value describes the SQL filter that gets applied to the query when the property is populated.
-
-Properties that matches a DataModel field performs an exact query `{Field} = {Value}`, e.g:
-
-```typescript
-const api = client.api(new QueryBookings({ id:1 }))
-```
-
-As `MinCost` matches the `"Min%"` convention it applies the `Cost >= 100` filter to the query:
-
-```typescript
-const api = client.api(new QueryBookings({ minCost:100 }))
-```
-
-As `CostBetween` matches the `"%Between%"` convention it applies the `Cost BETWEEN 100 AND 200` filter to the query:
-
-```typescript
-const api = client.api(new QueryBookings({ costBetween:[100,200] }))
-```
-
-AutoQuery also matches on pluralized fields where `Ids` matches `Id` and applies the `Id IN (1,2,3)` filter:
-
-```typescript
-const api = client.api(new QueryBookings({ ids:[1,2,3] }))
-```
-
-Multiple Request DTO properties applies multiple **AND** filters, e.g:
-
-```typescript
-const api = client.api(new QueryBookings({ minCost:100, ids:[1,2,3] }))
-```
-
-Applies the `(Cost >= 100) AND (Id IN (1,2,3))` filter.
-
-## Key Conventions
-
-### API Client Usage
-
-Frontend code imports from `lib/gateway.ts`:
-
-```typescript
-import { client } from '@/lib/gateway'
-import { QueryBookings } from '@/lib/dtos'
-
-const response = await client.api(new QueryBookings())
-```
-
-The `client` is a configured `JsonServiceClient` pointing to `/api` (proxied to .NET backend).
-
-All .NET APIs are accessible by Request DTOs which implement either a `IReturn<ResponseType>` a `IReturnVoid` interface which defines the API Response, e.g:
-
-```typescript
-export class Hello implements IReturn<HelloResponse>, IGet
-{
-    public name: string;
-    public constructor(init?: Partial<Hello>) { (Object as any).assign(this, init); }
-}
-export class HelloResponse
-{
-    public result: string;
-    public constructor(init?: Partial<HelloResponse>) { (Object as any).assign(this, init); }
-}
-```
-
-### ServiceStack API Client Pattern
-
-Inside a React Component use `useClient()` to resolve a Service Client. The `ApiResult` can hold **loading**, **failed** and **successful** API Response states, e.g:
-
-```typescript
-type Props = { value: string }
-export default ({ value }:Props) => {
-    const [name, setName] = useState(value)
-    const client = useClient()
-    const [api, setApi] = useState<ApiResult<HelloResponse>>(new ApiResult())
-    
-    useEffect(() => {
-        (async () => {
-            setApi(new ApiResult())
-            setApi(await client.api(new Hello({ name })))
-        })()
-    }, [name])
-
-    return (<div>
-        <TextInput id="name" label="API Example" value={name} onChange={setName} />
-        {api.error
-            ? <div className="text-red-500">{api.error.message}</div>
-            : api.succeeded 
-                ? <div className="text-gray-900">{api.response.result}</div>
-                : <div>loading...</div>}
-    </div>)
-}
-```
-
-All client `api`, `apiVoid` and `apiForm` methods **never throws exceptions** - it always returns an `ApiResult<T>` which contains either a **response** for successful responses or an **error** with a populated `ResponseStatus`, as such using `try/catch` around `client.api*` calls is always wrong as it implies it would throw an Exception, when it never does.
-
-The examples below show typical usage:
-
-The `api` and `apiVoid` APIs return an `ApiResult<Response>` which holds both successful and failed API Responses:
-
-```typescript
-const api = await client.api(new Hello({ name }))
-if (api.succeeded) {
-    console.log(`The API succeeded:`, api.response)
-} else if (api.error) {
-    console.log(`The API failed:`, api.error)
-}
-```
-
-The `apiForm` API can use a HTML Form's FormData for its Request Body together with an APIs **empty Request DTO**, e.g:
-
-```typescript
-const submit = async (e: React.FormEvent) => {
-    const form = e.currentTarget as HTMLFormElement
-    const api = await client.apiForm(new CreateContact(), new FormData(form))
-    if (api.succeeded) {
-        console.log(`The API succeeded:`, api.response)
-    } else if (api.error) {
-        console.log(`The API failed:`, api.error)
-    }
-}
-```
-
-Using `apiForm` is required for multipart/form-data File Uploads.
-
-### ServiceStack Form Components
-
-The `@servicestack/react` [component library](https://react.servicestack.net) have several components to simplify UI generation. 
-
-The `<AutoForm>` Component can be used to render an API validation bound form for **any Request DTO**.
-
-```jsx
-import { AutoForm, AutoCreateForm, AutoEditForm, HtmlFormat } from '@servicestack/react'
-
-function GenericFormExample() {
-  const [results, setResults] = useState<Booking[]|undefined>()
-
-  const onSuccess = (response:QueryResponse<Booking>) => {
-    setResults(response.results)
-  }
-
-  return (
-   <AutoForm panelClass="mx-auto max-w-3xl" type="QueryBookings" onSuccess={onSuccess} />
-   {results && <HtmlFormat value={results} />}
-  )
-}
-```
-
-The `<AutoCreateForm>` can be used with an AutoQuery CRUD `ICreateDb<T>` DTO to render a create entity form.
-
-```jsx
-<AutoCreateForm type="CreateBooking" formStyle="card" />
-```
-
-The `<AutoEditForm>` can be used with an AutoQuery CRUD `IPatchDb<T>` or `IUpdateDb<T>` DTO to render an update form.
-The `deleteType` can be set to use an `IDeleteDb<T>` DTO to enable delete functionality.
-```jsx
-function EditFormExample({ booking }:{ Booking:booking }) {
-   return (
-      <AutoEditForm
-         value={booking}
-         type="UpdateBooking"
-         deleteType="DeleteBooking"
-         heading="Change an existing Room Booking"
-         subHeading="Manage reservations for MyApp hotels."
-         formStyle="card"
-      />)
-}
-```
-
-### ApiStateContext and Input Components
-
-The `ApiStateContext` can be used to inject an APIs Error `ResponseStatus` down to all `@servicestack/react` Input components.
-
-```jsx
-import {ErrorSummary, TextInput, PrimaryButton, useClient, ApiStateContext} from "@servicestack/react"
-
-function CustomFormExample() {
-    const client = useClient()
-    const [userName, setUserName] = useState<string|undefined>()
-    const [password, setPassword] = useState<string|undefined>()
-
-    const onSubmit = async (e:SyntheticEvent<HTMLFormElement>) => {
-        e.preventDefault()
-        const api = await client.api(new Authenticate({ provider: 'credentials', userName, password }))
-        if (api.succeeded) {
-            console.log('Signed In!', api.response)
-        } else if (api.error.errorCode === 'Unauthorized') {
-            console.log('Sign In failed:', api.error.message)
-        }
-    }
-
-   return (<ApiStateContext.Provider value={client}>
-      <form onSubmit={onSubmit}>
-        <ErrorSummary except="userName,password,rememberMe"/>
-        <div>
-            <TextInput id="userName" help="Email you signed up with" autoComplete="email"
-                       value={userName} onChange={setUserName}/>
-            <TextInput id="password" type="password" help="6 characters or more"
-                       value={password} onChange={setPassword}/>
-            <PrimaryButton>Log in</PrimaryButton>
-        </div>
-      </form>
-   </ApiStateContext.Provider>)
-}
-```
-
-All field errors are displayed next to their Input component all other API errors are displayed with the `<ErrorSummary>` component. Use `except` to avoid displaying field errors which are already displayed next to their associated input component.
-
-If needed, the error ResponseStatus can be passed to components using its `status` property.
-
-### Routing
-
-- `/api/*` → ServiceStack services
-- `/Identity/*` → ASP.NET Core Identity Razor Pages
-- `/ui/*` → ServiceStack API Explorer
-- `/admin-ui/*` → ServiceStack Admin UI (requires Admin role)
-- `/types/typescript` → ServiceStack .NET API TypeScript DTOs (for dtos.ts)
-- All other routes → React SPA (via fallback in dev/prod)
-
-### Razor Pages Integration
-
-The template includes Razor Pages for Identity UI (`/Identity` routes) that coexist with the React SPA. These use Tailwind CSS compiled from `MyApp/tailwind.input.css` to `MyApp/wwwroot/css/app.css`.
-
-### Environment Variables
-
-- `KAMAL_DEPLOY_HOST` - Production hostname for deployment
-
-### Background Jobs
-
-Configured in [Configure.BackgroundJobs.cs](MyApp/Configure.BackgroundJobs.cs) using `BackgroundsJobFeature`. Jobs are commands that implement `IAsyncCommand<T>`.
-
-## Development Workflow
-
-1. **Start dev servers:** `dotnet watch` (starts both .NET and Vite)
-2. **Make backend changes:** Edit C# files in `MyApp.ServiceModel` or `MyApp.ServiceInterface`
-3. **Restart .NET Server**
-4. **Regenerate DTOs:** `cd MyApp.Client && npm run dtos`
-5. **Make frontend changes:** Edit React files in `MyApp.Client/src`
-6. **Add new CRUD feature:**
-   - `npx okai init Feature`
-   - Edit `MyApp.ServiceModel/Feature.d.ts`
-   - `npx okai Feature.d.ts`
-   - `npm run migrate`
-
-Docs: [AutoQuery Dev Workflow](https://react-templates.net/docs/autoquery/dev-workflow)
-
-## Admin Features
-
-- `/admin-ui` - ServiceStack Admin UI (database, users, API explorer)
-- `/admin-ui/users` - User management (requires Admin role)
-- `/up` - Health check endpoint
-
-## Deployment
-
-GitHub Actions workflows in `.github/workflows/` uses [Kamal for Deployments](https://react-templates.net/docs/deployments):
-- `build.yml` - CI build and test
-- `build-container.yml` - Docker image build
-- `release.yml` - Kamal deployment to production
-
-Configure `KAMAL_DEPLOY_HOST` in GitHub secrets for your hostname. Kamal config in `config/deploy.yml` derives service names from repository name.
+1. run `dotnet build MyApp.slnx`;
+2. run `dotnet test MyApp.slnx`;
+3. regenerate DTOs if contracts changed;
+4. run frontend type-check and tests;
+5. run the production static export;
+6. verify no secret, generated database, or local data-protection key is staged;
+7. update `README.md`, `PLAN.md`, or this guide if an invariant or workflow changed.

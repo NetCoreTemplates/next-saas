@@ -1,7 +1,7 @@
 name: Release
 permissions:
   packages: write
-  contents: write
+  contents: read
 on:
   workflow_run:
     workflows: ["Build Container"]
@@ -24,13 +24,15 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Encode APPSETTINGS_JSON for runtime
-        if: env.APPSETTINGS_JSON != null
+        if: env.APPSETTINGS_JSON != ''
         run: |
           # Base64 encode to avoid shell/YAML quoting issues; keep as a single env var.
           b64=$(printf '%s' "$APPSETTINGS_JSON" | base64 -w0)
@@ -39,6 +41,7 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "IMAGE=ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "VERSION=${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_ENV
           repo_name="$(echo ${{ github.repository }} | cut -d '/' -f 2)"
           echo "SERVICE=$(echo $repo_name | tr '[:upper:]' '[:lower:]' | tr '.' '-')" >> $GITHUB_ENV
           if find . -maxdepth 2 -type f -name "Configure.Db.Migrations.cs" | grep -q .; then
@@ -85,27 +88,6 @@ jobs:
           echo "Setting app file permissions"
           kamal server exec "chown -R 1654:1654 /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
 
-      - name: Check if first run and execute kamal app boot if necessary
-        run: |
-          FIRST_RUN_FILE="~/first-run/${{ env.SERVICE }}"
-          if ! kamal server exec -q "test -f $FIRST_RUN_FILE"; then
-            kamal server exec -q "mkdir -p ~/first-run && touch $FIRST_RUN_FILE" || true
-
-            if [ -n "${{env.INIT_DB_SQL}}" ]; then
-              echo "Initializing DB with INIT_DB_SQL secret..."
-              # Save the SQL content to a temporary file
-              echo "${{ env.INIT_DB_SQL }}" > init-db.sql
-              cat init-db.sql | kamal server exec -i "cat > /opt/docker/${{ env.SERVICE }}/initdb.d/${{ env.SERVICE }}.sql" && rm init-db.sql || true
-            fi
-            # Start all kamal accessories
-            kamal accessory boot all || true
-
-            # Deploy latest version
-            kamal deploy -q -P --version latest || true
-          else
-            echo "Not first run, skipping kamal app boot"
-          fi
-
       - name: Verify file permissions before deploy
         run: |
           kamal server exec --no-interactive "chown -R 1654:1654 /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
@@ -114,10 +96,13 @@ jobs:
         run: |
           kamal lock release -v
           kamal server exec --no-interactive 'echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin'
-          kamal server exec --no-interactive 'docker pull ${{ env.IMAGE }}:latest'
-          kamal deploy -P --version latest
+          kamal server exec --no-interactive 'docker pull ${{ env.IMAGE }}:${{ env.VERSION }}'
+          kamal deploy -P --version "${{ env.VERSION }}"
 
       - name: Migration
         if: env.HAS_MIGRATIONS == 'true'
         run: |
-          kamal app exec --no-reuse --no-interactive --version=latest "--AppTasks=migrate"
+          kamal app exec --no-reuse --no-interactive --version="${{ env.VERSION }}" "--AppTasks=migrate"
+
+      - name: Verify production readiness
+        run: curl --fail --show-error --silent --retry 12 --retry-delay 5 "https://${{ env.KAMAL_DEPLOY_HOST }}/ready"

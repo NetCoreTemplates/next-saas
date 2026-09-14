@@ -13,8 +13,9 @@ const getBaseUrl = () => {
     // This is needed for generateStaticParams to fetch data during build
     return process.env.INTERNAL_API_URL || process.env.apiBaseUrl || '';
   }
-  // Client-side: use relative path (served by same origin or proxied)
-  return '/';
+  // The production export is served by ASP.NET on the same origin. During
+  // Next.js development, apiBaseUrl points at the local ASP.NET host.
+  return process.env.apiBaseUrl || '/';
 };
 
 export const BaseUrl = getBaseUrl()
@@ -28,7 +29,6 @@ export async function init() {
     const { useMetadata, authContext } = await import("@servicestack/react")
     const metadata = useMetadata(client)
     const authCtx = authContext()
-    console.log('init()', BaseUrl, process.env.INTERNAL_API_URL, process.env.apiBaseUrl)
 
     return await Promise.all([
         metadata.loadMetadata({

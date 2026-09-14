@@ -1,447 +1,229 @@
-# .NET 10 Next.js Static Export Identity Auth Template 
+# Next SaaS
 
-![](https://github.com/ServiceStack/docs.servicestack.net/blob/main/MyApp/wwwroot/img/pages/react/next-static.webp)
+A production-oriented .NET 10 + ServiceStack + Next.js 16 template for self-serve B2B SaaS products.
 
-> Browse [source code](https://github.com/NetCoreTemplates/next-static)
+The included Acme product is a deliberately small hosted document-storage and analytics service. Its file module exists to demonstrate tenant isolation, quota reservations, exact storage gauges, analytics, and lifecycle operations—not document parsing, ingestion, search, or RAG.
 
-A modern full-stack .NET 10.0 + Next.js 16 project template that combines the power of ServiceStack with Next.js static site generation and React 19. It provides a production-ready foundation for building scalable web applications with integrated authentication, database management, and background job processing.
+Customer-facing screens call the tenant/account boundary an **Organization**. Internal code, DTOs, and database records retain the conventional `Workspace` name so established APIs and extension points remain stable.
 
-## Quick Start
+## What is included
+
+- enterprise marketing site, pricing, sign-in, and registration;
+- personal and team workspaces with invitation acceptance, persisted workspace switching, and Owner, Admin, Billing, and Member roles;
+- Free, Pro, Business, and sales-led Enterprise tiers;
+- immutable published plan versions, features, prices, and quotas;
+- Stripe Checkout, Customer Portal, plan trials, admin-managed promotion codes, signed webhook validation, and local subscription projection;
+- immutable, idempotent document-count, exact-byte storage, upload, API-request, and seat usage with real-time quota aggregates and hard-limit enforcement;
+- ServiceStack API Keys with workspace and usage scopes;
+- customer overview, documents, usage analytics, billing, API keys, team, audit, notifications, and lifecycle settings;
+- role-gated SaaS analytics, customer 360, support/operations tooling, plus ServiceStack Admin UI and Admin Database;
+- customer-specific entitlement overrides with business reason and audit actor;
+- Background Jobs for Stripe webhooks, file deletion, rollups, snapshots, notifications, exports, and staged workspace deletion;
+- request logging, profiling, OpenAPI/Scalar, liveness/readiness health checks, and generated TypeScript DTOs;
+- static Next.js production output served by the single ASP.NET Core runtime.
+
+New developers should begin with the ordered [developer documentation](docs/README.md). The architectural and product decisions are documented in [PLAN.md](PLAN.md); the machine-readable module map is [features.json](features.json).
+
+## Run locally
+
+Install dependencies once:
 
 ```bash
-npx create-net next-static MyProject
+cd MyApp.Client
+npm install
+cd ../MyApp
+npm install
 ```
 
-## Jumpstart with Copilot
+The first normal application start detects an empty database and creates the Identity schema, SaaS schema, reference plans, and Development-only sample users automatically. Existing databases are never destructively recreated; use the explicit migration task when applying later migrations.
 
-Instantly [scaffold a new App with this template](https://github.com/new?template_name=next-static&template_owner=NetCoreTemplates) using GitHub Copilot, just describe the features you want and watch Copilot build it!
-
-## [react-templates.net](https://react-templates.net)
-
-[![](https://github.com/ServiceStack/servicestack.net/blob/main/MyApp/wwwroot/img/posts/vibecode-react-templates/bg.webp?raw=true)](https://react-templates.net)
-
-## Getting Started
-
-Run Server .NET Project (automatically starts both .NET and Next.js dev servers):
+Start the ASP.NET Core host. It automatically starts and proxies the Next.js development server:
 
 ```bash
-cd MyProject
+cd MyApp
 dotnet watch
 ```
 
-## Architecture
+Open `https://localhost:5001`. Seeded development accounts all use `p@55wOrd`:
 
-### Hybrid Development Approach
+- `admin@email.com` — platform administration;
+- `manager@email.com` — standard customer flow;
+- `employee@email.com` — standard customer flow;
+- `test@email.com` — minimal authenticated account.
 
-**Development Mode:**
+## Runtime architecture
 
-![](https://raw.githubusercontent.com/ServiceStack/docs.servicestack.net/refs/heads/main/MyApp/wwwroot/img/pages/react/info/next-static-dev.svg)
+In development, ASP.NET Core owns the public origin and proxies page/HMR traffic to Next.js. In production, `next build` creates a static export and ASP.NET Core serves it directly from `wwwroot`; no Node.js process or Next.js server is required.
 
-- ASP.NET Core proxies requests to Next.js dev server (running on port 3000)
-- Hot Module Replacement (HMR) support for instant UI updates
-- WebSocket proxying for Next.js HMR functionality
+Dynamic behavior always goes through typed ServiceStack APIs:
 
-**Production Mode:**
-
-![](https://raw.githubusercontent.com/ServiceStack/docs.servicestack.net/refs/heads/main/MyApp/wwwroot/img/pages/react/info/next-static-prod.svg)
-
-- Next.js app is statically exported to `/dist`
-- Static files served directly from ASP.NET Core's `/wwwroot`
-- No separate Node.js server required in production
-
-## Core Technologies
-
-### Frontend (Next.js 16 + React 19)
-- **Next.js** with static export capability
-- **Tailwind CSS 4.x** - Utility-first styling with PostCSS
-- **TypeScript** - Type-safe development
-- **Vitest** - Modern testing framework
-- **ServiceStack React Components** - Pre-built UI components
-
-### .NET Frontend (Integrated + Optional)
-- **Razor Pages** - For Identity Auth UI (`/Identity` routes)
-
-### Backend (.NET 10.0)
-- **ServiceStack 10.x** - High-performance web services framework
-- **ASP.NET Core Identity** - Complete authentication & authorization system
-- **Entity Framework Core** - For Identity data management
-- **OrmLite** - ServiceStack's fast, lightweight Typed ORM for application data
-- **SQLite** - Default database - [Upgrade to PostgreSQL/SQL Server/MySQL](#upgrading-to-enterprise-database)
-
-## Major Features
-
-### 1. Authentication & Authorization
-- ASP.NET Core Identity integration with role-based access control
-- Custom user sessions with additional claims
-- Admin users feature for user management at `/admin-ui/users`
-- Email confirmation workflow (configurable SMTP)
-- Razor Pages for Identity UI (`/Identity` routes)
-
-### [2. AutoQuery CRUD](#autoquery-crud-dev-workflow)
-- Declarative API development with minimal code
-- Complete Auth-protected CRUD operations (see Bookings example at `/bookings-auto`)
-- Automatic audit trails (created/modified/deleted tracking)
-- Built-in validation and authorization
-- Type-safe TypeScript DTOs auto-generated from C# models
-
-### 3. Background Jobs
-- `BackgroundsJobFeature` for async task processing
-- Command pattern for job execution
-- Email sending via background jobs
-- Recurring job scheduling support
-- Uses monthly rolling Sqlite databases by default - [Upgrade to PostgreSQL/SQL Server/MySQL](#upgrading-to-enterprise-database)
-
-### 4. Developer Experience
-- **Admin UI** at `/admin-ui` for App management
-- **Health checks** at `/up` endpoint
-- **Modular startup** configuration pattern
-- **Code-first migrations** with OrmLite
-- **Docker support** with container publishing
-- **Kamal deployment** configuration included
-
-### 5. Production Features
-- Static asset caching with intelligent cache invalidation
-- Clean URLs without `.html` extensions
-- HTTPS redirection and HSTS
-- Data protection with persistent keys
-- Health monitoring
-- Database developer page for EF Core errors
-
-## Project Structure
-
-```
-MyApp/                       # Main ASP.NET Core host
-├── Configure.*.cs           # Modular startup configuration
-├── Program.cs               # Application entry point
-└── wwwroot/                 # Static files (production)
-
-MyApp.Client/                # Next.js frontend application
-├── app/                     # Next.js App Router pages
-├── components/              # React components
-├── lib/                     # Utilities and helpers
-├── public/                  # Static assets
-├── dist/                    # Build output (production)
-└── styles/                  # Tailwind CSS styles
-
-MyApp.ServiceInterface/      # Service implementations
-├── MyServices.cs            # Example services
-└── Data/                    # EF Core DbContext
-
-MyApp.ServiceModel/          # DTOs and service contracts
-├── Bookings.cs              # AutoQuery CRUD example
-└── Hello.cs                 # Example service contract
-
-MyApp.Tests/                 # Integration and unit tests
-
-config/                      # Deployment configuration
-└── deploy.yml               # Kamal deployment settings
-
-.github/                     # GitHub Actions workflows
-└── workflows/
-    ├── build.yml            # CI build and test
-    ├── build-container.yml  # Container image build
-    └── release.yml          # Production deployment with Kamal
+```text
+Browser / API client
+        │
+        ▼
+ASP.NET Core + ServiceStack
+  ├── Identity sessions and API keys
+  ├── workspaces, plans, entitlements
+  ├── local usage ledger and quota checks
+  ├── Stripe billing gateway
+  └── Background Jobs webhook worker
+        │
+        ├── RDBMS (enforcement truth)
+        └── Stripe (payments and invoices)
 ```
 
-## Development Workflow
+Stripe is never queried on the normal authorization path. Signed webhooks update a local projection asynchronously.
 
-### 1. Start Development
+## Configuration ownership
+
+Configuration has deliberate boundaries:
+
+- deployment-wide policy is source-controlled in `MyApp/appsettings.json` under `Saas` and `Stripe`;
+- plans, versions, prices, features, and quotas are RDBMS records managed by administrators;
+- negotiated customer exceptions are audited RDBMS overrides.
+
+Effective access uses this precedence:
+
+1. active customer override;
+2. workspace subscription's pinned plan version;
+3. published Free plan;
+4. deployment-wide fallback.
+
+Checked-in Stripe secrets are empty. Supply secrets through environment variables or `APPSETTINGS_PATCH`:
 
 ```bash
-dotnet watch
+export Stripe__PublishableKey=pk_test_...
+export Stripe__SecretKey=sk_test_...
+export Stripe__WebhookSecret=whsec_...
 ```
 
-This automatically starts both .NET and Next.js dev servers.
+Production startup is intentionally fail-closed. `Deployment` policy checks reject placeholder URLs and support addresses, wildcard hosts, SQLite, development email delivery, automatic first-request migration, missing Stripe/webhook credentials, and test Stripe keys. Each requirement is configurable for staging or an intentionally free-only product, but weakening one requires an explicit setting. Development startup is unaffected.
 
-### 2. Generate TypeScript DTOs
+Global policy is read-only in the browser so production changes remain reviewable. The `/admin` Operations Center groups customer, plan, usage, operational, security, and settings workflows into static routes, with low-level data access available to authorized operators at `/admin-ui/database`.
 
-After modifying C# service models, regenerate TypeScript dtos.ts in `MyApp` or `MyApp.Client` with:
+## Stripe setup
+
+1. Set `Stripe__SecretKey` to a Stripe sandbox key and restart the application.
+2. Sign in as an administrator, open `/admin/plans`, remain on the **Plans** tab, select a paid plan, and open its **Pricing** section.
+3. Click **Create missing in Stripe** to create or reuse the plan's Stripe Product and recurring Prices. The returned `price_...` mappings are filled into the draft automatically.
+4. Save the draft and publish it. Repeat for each self-serve paid plan. Zero-cost and contact-sales plans are intentionally skipped.
+5. Configure a Stripe Customer Portal configuration if you need a non-default portal.
+6. Register `POST https://your-domain.example/stripe/webhook` for Checkout, subscription, and failed-payment events.
+7. Set the webhook signing secret as `Stripe__WebhookSecret`.
+
+For localhost, keep the Stripe CLI listener running while testing Checkout:
 
 ```bash
+stripe listen \
+  --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed \
+  --forward-to https://localhost:5001/stripe/webhook \
+  --skip-verify
+```
+
+Copy the listener's `whsec_...` value into `Stripe__WebhookSecret`, then restart the application. Checkout's success return also asks the server to verify the completed Checkout Session directly with Stripe. This closes the browser/webhook timing race and can recover a completed local checkout when the listener was not running. Webhooks remain required for renewals, payment failures, cancellations, and changes made later in the Customer Portal.
+
+Catalog provisioning is metadata-based and idempotent, so retrying reuses template-managed Stripe objects instead of duplicating them. It is enabled for sandbox keys by default. Automatic live-mode provisioning requires the explicit deployment setting `Stripe__AllowLiveCatalogProvisioning=true`; otherwise live Products and Prices must be managed directly in Stripe and their IDs pasted into the plan draft.
+
+Until Price IDs and secrets exist, Free remains fully functional and paid checkout returns a descriptive configuration error. This makes the generated template useful immediately without accidentally creating live billing objects.
+
+Administrators can enable a 1–365 day trial independently on each plan version from the **Plans** tab at `/admin/plans`. `Saas.EnableTrials`, `Saas.DefaultTrialDays`, and `Saas.TrialRequiresPaymentMethod` define the deployment-wide behavior; without an upfront payment method, Stripe cancels the subscription safely when its trial expires. The separate **Coupons** tab creates percentage or fixed-amount Stripe coupons, issues the accompanying customer-facing promotion code, sets duration, expiry, redemption limits, and first-purchase restrictions, and deactivates codes. Checkout displays Stripe's secure promotion-code entry automatically. Discount definitions and redemption state remain in Stripe; create/deactivate actions are recorded in the local SaaS audit trail.
+
+Stripe-hosted invoice PDFs are the default. Add `ServiceStack.Pdf` only if the derived product needs a separate branded usage statement.
+
+## Usage and quotas
+
+Record consumption using a ServiceStack Identity session or scoped API key:
+
+```bash
+curl -X POST https://localhost:5001/api/RecordUsage \
+  -H "X-Api-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "meterKey": "api.requests",
+    "units": 12,
+    "idempotencyKey": "import_01K4..."
+  }'
+```
+
+The idempotency key is unique per workspace and meter operation. Replaying an accepted operation returns the existing result without spending quota twice. The included meters are `documents.stored`, `storage.bytes`, `documents.uploaded`, `api.requests`, and `workspace.seats`. Hard-limit operations that would exceed an allowance fail with `QuotaExceeded` and do not write a usage event.
+
+The file upload example reserves document and byte capacity before streaming, settles the actual result, and releases capacity on failure. Background deletion writes compensating gauge adjustments.
+
+Concurrent quota admission uses a conditional database update inside the same transaction as the immutable event or reservation. Two requests therefore cannot both spend the last unit. Upload failures also compensate any gauge settlement that completed before a later persistence failure.
+
+## Developer workflow
+
+After changing C# request or response contracts, regenerate the browser client:
+
+```bash
+cd MyApp.Client
 npm run dtos
 ```
 
-### 3. Database Migrations
-
-**OrmLite and Entity Framework:**
+Run the complete validation suite:
 
 ```bash
-npm run migrate
+./scripts/verify.sh
 ```
 
-**OrmLite (for application data):**
+Before deployment, export the production configuration and run the preflight. It validates configuration without printing secret values, then runs the complete build, test, static-export, and empty-database bootstrap suite:
 
-Create migration classes in `MyApp/Migrations/` following the pattern in `Migration1000.cs`.
-
-### 4. Testing
-
-**Frontend:**
 ```bash
+set -a
+source .env.production
+set +a
+./scripts/preflight.sh
+```
+
+Use `./scripts/preflight.sh --config-only` when build artifacts have already passed CI. With `Database__AutoMigrateEmpty=false`, apply migrations as a deliberate release step before starting multiple application instances:
+
+```bash
+cd MyApp
+dotnet run --no-launch-profile --AppTasks=migrate
+```
+
+Or run individual commands:
+
+```bash
+dotnet build MyApp.slnx
+dotnet test MyApp.slnx
 cd MyApp.Client
-npm run test        # Run tests in watch mode
-npm run test:ui     # Run tests with UI
-npm run test:run    # Run tests once
+npm run typecheck
+npm run test:run
+npm run build
 ```
 
-**Backend:**
-```bash
-dotnet test
-```
+Useful development surfaces:
 
+- `/admin` — Operations Center overview, with focused routes under `/admin/*`;
+- `/admin/customers` — Customer 360 and customer exceptions;
+- `/admin/plans` — separate Plans and Coupons tabs;
+- `/admin/usage` — platform analytics and quota pressure;
+- `/admin/operations` — failed work queues and integration readiness;
+- `/admin/security` — support access, retention, and platform audit;
+- `/admin/settings` — configuration ownership and boundaries;
+- `/admin-ui` — ServiceStack administration;
+- `/admin-ui/database` — plan and customer record management;
+- `/scalar/v1` — OpenAPI reference;
+- `/ui` — ServiceStack API Explorer;
+- `/up` — health check.
+- `/ready` — database and file-store readiness.
 
-## Configuration
-
-### Key Configuration Files
-
-- **MyApp/appsettings.json** - Application configuration
-- **MyApp.Client/next.config.mjs** - Next.js configuration
-- **MyApp.Client/styles/index.css** - Tailwind CSS configuration
-- **config/deploy.yml** - Kamal deployment settings
-
-### App Settings
-
-Configure in `appsettings.json` or environment:
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "DataSource=App_Data/app.db;Cache=Shared"
-  },
-  "SmtpConfig": {
-    "Host": "smtp.example.com",
-    "Port": 587,
-    "FromEmail": "noreply@example.com",
-    "FromName": "MyApp"
-  },
-  "AppConfig": {
-    "BaseUrl": "https://myapp.example.com"
-  }
-}
-```
-
-### App Settings Secrets
-
-Instead of polluting each GitHub Reposity with multiple App-specific GitHub Action Secrets, you can save all your secrets in a single `APPSETTINGS_PATCH` GitHub Action Secret to patch `appsettings.json` with environment-specific configuration using [JSON Patch](https://jsonpatch.com). E.g:
-
-```json
-[
-    {
-        "op":"replace",
-        "path":"/ConnectionStrings/DefaultConnection",
-        "value":"Server=service-postgres;Port=5432;User Id=dbuser;Password=dbpass;Database=dbname;Pooling=true;"
-    },
-    { "op":"add", "path":"/SmtpConfig", "value":{
-        "UserName": "SmptUser",
-        "Password": "SmptPass",
-        "Host": "email-smtp.us-east-1.amazonaws.com",
-        "Port": 587,
-        "From": "noreply@example.org",
-        "FromName": "MyApp",
-        "Bcc": "copy@example.org"
-      } 
-    },
-    { "op":"add", "path":"/Admins", "value": ["admin1@email.com","admin2@email.com"] },
-    { "op":"add", "path":"/CorsFeature/allowOriginWhitelist/-", "value":"https://servicestack.net" }
-]
-```
-
-### SMTP Email
-
-Enable email sending by uncommenting in `Program.cs`:
-
-```csharp
-services.AddSingleton<IEmailSender<ApplicationUser>, EmailSender>();
-```
-
-## Upgrading to Enterprise Database
-
-To switch from SQLite to PostgreSQL/SQL Server/MySQL:
-
-1. Install preferred RDBMS (ef-postgres, ef-mysql, ef-sqlserver), e.g:
+To recreate the development database and local file storage from an empty state:
 
 ```bash
-npx add-in ef-postgres
+ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes
 ```
 
-2. Install `db-identity` to use RDBMS `DatabaseJobsFeature` for background jobs and `DbRequestLogger` for Request Logs:
+## Project structure
 
-```bash
-npx add-in db-identity
+```text
+MyApp/                       ASP.NET Core host, plugins, migrations, Stripe gateway
+MyApp.Client/                Next.js static frontend and generated TypeScript DTOs
+MyApp.ServiceInterface/      SaaS services, quota policy, Background Job commands
+MyApp.ServiceModel/          shared domain entities and API contracts
+MyApp.Tests/                 unit and integration tests
+config/                      Kamal deployment configuration
 ```
 
-## AutoQuery CRUD Dev Workflow
-
-For Rapid Development simple [TypeScript Data Models](https://docs.servicestack.net/autoquery/okai-models) can be used to generate C# AutoQuery APIs and DB Migrations.
-
-### Cheat Sheet
-
-### Create a new Table
-
-Create a new Table use `init <Table>`, e.g:
-
-```bash
-npx okai init Table
-```
-
-This will generate an empty `MyApp.ServiceModel/<Table>.d.ts` file along with stub AutoQuery APIs and DB Migration implementations. 
-
-### Use AI to generate the TypeScript Data Model
-
-Or to get you started quickly you can also use AI to generate the initial TypeScript Data Model with:
-
-```bash
-npx okai "Table to store Customer Stripe Subscriptions"
-```
-
-This launches a TUI that invokes ServiceStack's okai API to fire multiple concurrent requests to frontier cloud 
-and OSS models to generate the TypeScript Data Models required to implement this feature. 
-You'll be able to browse and choose which of the AI Models you prefer which you can accept by pressing `a` 
-to `(a) accept`. These are the data models [Claude Sonnet 4.5 generated](https://servicestack.net/text-to-blazor?id=1764337230546) for this prompt.
-
-#### Regenerate AutoQuery APIs and DB Migrations
-
-After modifying the `Table.d.ts` TypeScript Data Model to include the desired fields, re-run the `okai` tool to re-generate the AutoQuery APIs and DB Migrations:
-
-```bash
-npx okai Table.d.ts
-```
-
-> Command can be run anywhere within your Solution
-
-After you're happy with your Data Model you can run DB Migrations to run the DB Migration and create your RDBMS Table:
-
-```bash
-npm run migrate
-```
-
-#### Making changes after first migration
-
-If you want to make further changes to your Data Model, you can re-run the `okai` tool to update the AutoQuery APIs and DB Migrations, then run the `rerun:last` npm script to drop and re-run the last migration:
-
-```bash
-npm run rerun:last
-```
-
-#### Removing a Data Model and all generated code
-
-If you changed your mind and want to get rid of the RDBMS Table you can revert the last migration:
-
-```bash
-npm run revert:last
-```
-
-Which will drop the table and then you can get rid of the AutoQuery APIs, DB Migrations and TypeScript Data model with:
-
-```bash
-npx okai rm Transaction.d.ts
-```
-
-## Deployment
-
-### Docker + Kamal
-
-This project includes GitHub Actions for CI/CD with automatic Docker image builds and production [deployment with Kamal](https://docs.servicestack.net/kamal-deploy). The `/config/deploy.yml` configuration is designed to be reusable across projects—it dynamically derives service names, image paths, and volume mounts from environment variables, so you only need to configure your server's IP and hostname using GitHub Action secrets.
-
-### GitHub Action Secrets
-
-**Required - App Specific*:
-
-The only secret needed to be configured per Repository.
-
-| Variable | Example | Description |
-|----------|---------|-------------|
-| `KAMAL_DEPLOY_HOST` | `example.org` | Hostname used for SSL certificate and Kamal proxy |
-
-**Required** (Organization Secrets):
-
-Other Required variables can be globally configured in your GitHub Organization or User secrets which will
-enable deploying all your Repositories to the same server.
-
-| Variable | Example  | Description |
-|----------|----------|-------------|
-| `KAMAL_DEPLOY_IP`   | `100.100.100.100` | IP address of the server to deploy to |
-| `SSH_PRIVATE_KEY`   | `ssh-rsa ...`     | SSH private key to access the server |
-| `LETSENCRYPT_EMAIL` | `me@example.org`  | Email for Let's Encrypt SSL certificate |
-
-**Optional**:
-
-| Variable | Example | Description |
-|----------|---------|-------------|
-| `SERVICESTACK_LICENSE` | `...` | ServiceStack license key |
-
-**Inferred** (from GitHub Action context):
-
-These are inferred from the GitHub Action context and don't need to be configured.
-
-| Variable | Source | Description |
-|----------|--------|-------------|
-| `GITHUB_REPOSITORY` | `${{ github.repository }}` | e.g. `acme/example.org` - used for service name and image |
-| `KAMAL_REGISTRY_USERNAME` | `${{ github.actor }}` | GitHub username for container registry |
-| `KAMAL_REGISTRY_PASSWORD` | `${{ secrets.GITHUB_TOKEN }}` | GitHub token for container registry auth |
-
-#### Features
-
-- **Docker containerization** with optimized .NET images
-- **SSL auto-certification** via Let's Encrypt
-- **GitHub Container Registry** integration
-- **Volume persistence** for App_Data including any SQLite database
-
-## AI-Assisted Development with CLAUDE.md
-
-As part of our objectives of improving developer experience and embracing modern AI-assisted development workflows - all new .NET SPA templates include a comprehensive `AGENTS.md` file designed to optimize AI-assisted development workflows.
-
-### What is CLAUDE.md?
-
-`CLAUDE.md` and [AGENTS.md](https://agents.md) onboards Claude (and other AI assistants) to your codebase by using a structured documentation file that provides it with complete context about your project's architecture, conventions, and technology choices. This enables more accurate code generation, better suggestions, and faster problem-solving.
-
-### What's Included
-
-Each template's `AGENTS.md` contains:
-
-- **Project Architecture Overview** - Technology stack, design patterns, and key architectural decisions
-- **Project Structure** - Gives Claude a map of the codebase
-- **ServiceStack Conventions** - DTO patterns, Service implementation, AutoQuery, Authentication, and Validation
-- **API Integration** - TypeScript DTO generation, API client usage, component patterns, and form handling
-- **Database Patterns** - OrmLite setup, migrations, and data access patterns
-- **Common Development Tasks** - Step-by-step guides for adding APIs, implementing features, and extending functionality
-- **Testing & Deployment** - Test patterns and deployment workflows
-
-### Extending with Project-Specific Details
-
-The existing `CLAUDE.md` serves as a solid foundation, but for best results, you should extend it with project-specific details like the purpose of the project, key parts and features of the project and any unique conventions you've adopted.
-
-### Benefits
-
-- **Faster Onboarding** - New developers (and AI assistants) understand project conventions immediately
-- **Consistent Code Generation** - AI tools generate code following your project's patterns
-- **Better Context** - AI assistants can reference specific ServiceStack patterns and conventions
-- **Reduced Errors** - Clear documentation of framework-specific conventions
-- **Living Documentation** - Keep it updated as your project evolves
-
-### How to Use
-
-Claude Code and most AI Assistants already support automatically referencing `CLAUDE.md` and `AGENTS.md` files, for others you can just include it in your prompt context when asking for help, e.g:
-
-> Using my project's AGENTS.md, can you help me add a new AutoQuery API for managing Products?
-
-The AI will understand your App's ServiceStack conventions, React setup, and project structure, providing more accurate and contextual assistance.
-
-## Ideal Use Cases
-
-- SaaS applications requiring authentication
-- Admin dashboards with CRUD operations
-- Content-driven sites with dynamic APIs
-- Applications needing background job processing
-- Projects requiring both SSG benefits and API capabilities
-- Teams wanting type-safety across full stack
-
-## Learn More
-
-- [react-templates.net](https://react-templates.net)
-- [ServiceStack React Components](https://react.servicestack.net)
-- [ServiceStack Documentation](https://docs.servicestack.net)
-- [Next.js Documentation](https://nextjs.org/docs)
-- [React Documentation](https://react.dev)
-- [AutoQuery CRUD](https://react-templates.net/docs/autoquery/crud)
-- [Background Jobs](https://docs.servicestack.net/background-jobs)
-- [AI Chat API](https://docs.servicestack.net/ai-chat-api)
+The code favors explicit request DTOs, narrow services, configuration objects, and conventional folders. Those choices are intentionally predictable for both human maintainers and AI coding agents.

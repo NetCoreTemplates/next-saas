@@ -19,11 +19,14 @@ const Page: FC<Props> = ({ title, className, bodyClass, children }) => {
         <title>{title}</title>
       </Head>
       <Nav />
-      <div className="min-h-screen">
-        <main>
-          <div className={`max-w-7xl mx-auto px-5 ${className ?? ''}`}>
-            <div className={bodyClass ?? 'max-w-5xl'}>
-              <h1 className="text-4xl font-bold my-8 text-gray-900 dark:text-gray-100">{title}</h1>
+      <div className="relative min-h-[calc(100vh-4.5rem)] overflow-hidden bg-[#f6f8fb] dark:bg-[#07101f]">
+        <div className="enterprise-grid pointer-events-none absolute inset-0" />
+        <main className="relative py-14 lg:py-20">
+          <div className={`mx-auto max-w-xl px-5 ${className ?? ''}`}>
+            <div className={bodyClass ?? 'max-w-xl'}>
+              <p className="text-xs font-bold uppercase tracking-[.2em] text-[#0b5cff] dark:text-[#86efcd]">Secure organization access</p>
+              <h1 className="my-4 text-4xl font-semibold tracking-[-.045em] text-slate-950 dark:text-white">{title}</h1>
+              <p className="mb-8 text-sm leading-6 text-slate-500 dark:text-slate-400">Continue to your organization.</p>
               {children}
             </div>
           </div>

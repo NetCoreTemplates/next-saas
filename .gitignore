@@ -9,6 +9,7 @@ wwwroot/
 .idea/
 *.user
 *.tsbuildinfo
+*.log
 #sqlite
 .vs/
 bin/

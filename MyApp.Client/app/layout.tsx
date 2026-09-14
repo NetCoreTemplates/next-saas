@@ -1,10 +1,14 @@
 import "../styles/index.css"
 import type { Metadata } from 'next'
 import Providers from './providers'
+import { product } from '@/lib/product'
 
 export const metadata: Metadata = {
-  title: 'Next.js Example',
-  description: 'Next.js App Router Example',
+  title: {
+    default: `${product.name} — Document intelligence, grounded`,
+    template: `%s · ${product.name}`,
+  },
+  description: product.description,
 }
 
 export default function RootLayout({
@@ -13,9 +17,9 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head />
-      <body className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+      <body className="bg-[#f6f8fb] text-[#101828] antialiased transition-colors duration-200 dark:bg-[#07101f] dark:text-white">
         <script
           dangerouslySetInnerHTML={{
             __html: `

@@ -1,7 +1,10 @@
 ﻿using System.Net.Mail;
 using Microsoft.Extensions.Logging;
 using ServiceStack;
+using ServiceStack.Data;
 using ServiceStack.Jobs;
+using ServiceStack.OrmLite;
+using MyApp.ServiceModel;
 
 namespace MyApp.ServiceInterface;
 
@@ -52,14 +55,16 @@ public class SendEmail
     public required string Subject { get; set; }
     public string? BodyText { get; set; }
     public string? BodyHtml { get; set; }
+    public string? DeliveryId { get; set; }
 }
 
 [Worker("smtp")]
-public class SendEmailCommand(ILogger<SendEmailCommand> logger, IBackgroundJobs jobs, SmtpConfig config) 
-    : SyncCommand<SendEmail>
+public class SendEmailCommand(ILogger<SendEmailCommand> logger, IBackgroundJobs jobs, SmtpConfig config,
+    IDbConnectionFactory dbFactory)
+    : AsyncCommand<SendEmail>
 {
     private static long count = 0;
-    protected override void Run(SendEmail request)
+    protected override async Task RunAsync(SendEmail request, CancellationToken token)
     {
         Interlocked.Increment(ref count);
         var log = Request.CreateJobLogger(jobs, logger);
@@ -89,6 +94,28 @@ public class SendEmailCommand(ILogger<SendEmailCommand> logger, IBackgroundJobs 
             msg.Bcc.Add(new MailAddress(config.Bcc));
         }
 
-        client.Send(msg);
+        try
+        {
+            await client.SendMailAsync(msg, token);
+            UpdateDelivery(request.DeliveryId, NotificationDeliveryStatus.Delivered, null);
+        }
+        catch (Exception ex)
+        {
+            UpdateDelivery(request.DeliveryId, NotificationDeliveryStatus.Failed, ex.Message);
+            throw;
+        }
+    }
+
+    private void UpdateDelivery(string? deliveryId, NotificationDeliveryStatus status, string? error)
+    {
+        if (deliveryId.IsNullOrEmpty()) return;
+        using var db = dbFactory.Open();
+        var delivery = db.SingleById<NotificationDelivery>(deliveryId);
+        if (delivery == null) return;
+        delivery.Status = status;
+        delivery.DeliveredDate = status == NotificationDeliveryStatus.Delivered ? DateTime.UtcNow : null;
+        delivery.LastError = error.IsNullOrEmpty() ? null : error!.Length <= 2000 ? error : error[..2000];
+        delivery.ModifiedDate = DateTime.UtcNow;
+        db.Update(delivery);
     }
 }

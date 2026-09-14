@@ -2,35 +2,35 @@
 @inject SignInManager<ApplicationUser> SignInManager
 @{
     var hasExternalLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync()).Any();
-    var navItemCss = "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 hover:text-gray-900 dark:hover:text-gray-50 group flex items-center px-4 py-2 text-base font-medium rounded-md mr-2 whitespace-nowrap";
+    var navItemCss = "identity-manage-link";
 }
 
-<ul>
+<ul class="identity-manage-list">
     <li class="@ManageNavPages.IndexNavClass(ViewContext)">
-        <a class="@navItemCss" asp-page="./Index">Profile</a>
+        <a class="@navItemCss" asp-page="./Index"><span>Profile</span><small>Personal details</small></a>
     </li>
     <li class="@ManageNavPages.EmailNavClass(ViewContext)">
-        <a class="@navItemCss" asp-page="./Email">Email</a>
+        <a class="@navItemCss" asp-page="./Email"><span>Email</span><small>Address &amp; verification</small></a>
     </li>
     <li class="@ManageNavPages.ChangePasswordNavClass(ViewContext)">
-        <a class="@navItemCss" asp-page="./ChangePassword">Password</a>
+        <a class="@navItemCss" asp-page="./ChangePassword"><span>Password</span><small>Sign-in credentials</small></a>
     </li>
     @if (hasExternalLogins)
     {
         <li class="@ManageNavPages.ExternalLoginsNavClass(ViewContext)">
-            <a class="@navItemCss" asp-page="./ExternalLogins">External logins</a>
+            <a class="@navItemCss" asp-page="./ExternalLogins"><span>External logins</span><small>Connected providers</small></a>
         </li>
     }
     <li class="@ManageNavPages.TwoFactorAuthenticationNavClass(ViewContext)">
-        <a class="@navItemCss" asp-page="./TwoFactorAuthentication">Two-factor authentication</a>
+        <a class="@navItemCss" asp-page="./TwoFactorAuthentication"><span>Two-factor auth</span><small>Account protection</small></a>
     </li>
     <li class="@ManageNavPages.PersonalDataNavClass(ViewContext)">
-        <a class="@navItemCss" asp-page="./PersonalData">Personal data</a>
+        <a class="@navItemCss" asp-page="./PersonalData"><span>Personal data</span><small>Export or delete</small></a>
     </li>
     @if (HostContext.AppHost.HasPlugin<ApiKeysFeature>())
     {
         <li class="@ManageNavPages.ApiKeysNavClass(ViewContext)">
-            <a class="@navItemCss" asp-page="./ApiKeys">API Keys</a>
+            <a class="@navItemCss" asp-page="./ApiKeys"><span>API keys</span><small>Programmatic access</small></a>
         </li>
     }
 </ul>
