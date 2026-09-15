@@ -31,6 +31,8 @@ The admin workflow is draft then publish:
 
 Changing the public name on `SaasPlan` or editing a draft must not silently rewrite an existing customer’s allowances or price contract.
 
+![Plan Editor and Catalog Management](../assets/plan-editor.png)
+
 ## Feature registry
 
 Feature keys are defined under `Saas.Features` in JSON. A definition supplies display metadata and a global fallback:
@@ -58,6 +60,8 @@ For a feature, `IEntitlementResolver` applies:
 3. the configured global fallback.
 
 An override is active when its optional start has arrived and its optional expiry has not. Expired overrides are ignored without requiring destructive cleanup.
+
+![Entitlement Resolution Precedence](../assets/entitlement-precedence.png)
 
 `GetEffectiveEntitlements` returns each effective value, source, and expiry. The dashboard includes the same information for explanatory UI.
 

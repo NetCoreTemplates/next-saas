@@ -18,6 +18,8 @@ The repository is organized so a feature has a predictable path from contract to
 | `features.json` | Machine-readable module ownership and table classification |
 | `docs` | Developer onboarding and reference documentation |
 
+![Repository Structure and Project Landmarks](../assets/project-map.png)
+
 ## Trace a typical API
 
 `RecordUsage` demonstrates the normal flow:
@@ -36,6 +38,8 @@ npm run dtos
 ```
 
 Never make durable changes directly in `MyApp.Client/lib/dtos.ts`; regeneration replaces them.
+
+![End-to-End Typed ServiceStack Client](../assets/typed-client.png)
 
 ## Backend landmarks
 
@@ -62,6 +66,8 @@ Configuration follows the `Configure.*.cs` convention:
 `MyApp/Migrations/Migration1001.cs` creates the SaaS schema and seeds `plans.json`. Because this template is still under heavy development, a clean database is the expected way to apply structural changes here. A derived live product should use new numbered migrations.
 
 ## Frontend landmarks
+
+![Customer Organization Navigation](../assets/customer-navigation.png)
 
 - `app/page.tsx` and `app/(content)` provide the public site and Markdown-backed content routes.
 - `app/dashboard`, `documents`, `usage`, `billing`, `team`, and `settings` are customer pages.

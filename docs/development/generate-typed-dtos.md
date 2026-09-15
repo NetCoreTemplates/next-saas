@@ -33,6 +33,8 @@ The generator updates request classes, response classes, enums, routes, HTTP mar
 
 If generation cannot connect, check the running URL, TLS trust, and `apiBaseUrl`/metadata configuration. Do not patch the generated output to work around a metadata or C# contract problem.
 
+![End-to-End Typed ServiceStack Client](../assets/typed-client.png)
+
 ## Compatibility choices
 
 Adding an optional request property is generally easier for clients than renaming or removing one. Stable external APIs should introduce new DTOs/routes for breaking behavior. During template development, breaking changes are acceptable when every generated client and example is updated together.

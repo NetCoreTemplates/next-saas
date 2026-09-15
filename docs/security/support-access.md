@@ -18,11 +18,15 @@ Temporary support access limits how a platform operator can inspect a customer's
 
 Admin operators already have direct platform capability and do not start support sessions. BillingAdmin authority remains limited to billing/customer diagnostics.
 
+![Support Access Four-Stage Lifecycle](../assets/support-access-lifecycle.png)
+
 ## Data minimization
 
 Support projections remove billing identifiers unless the role can manage billing. Raw API keys, provider secrets, file bytes, authentication factors, and customer export contents are not support data.
 
 Support access is read-only. Product mutation endpoints still require organization membership or a separate platform capability; a support grant must not be treated as impersonation.
+
+![Customer 360 Platform Inspection](../assets/customer-360.png)
 
 Grant, start, denied use, end, revoke, expiry-sensitive access, notes, and associated operator actions should be correlated through audit and request IDs. Reasons and notes must not contain credentials or unnecessary personal data.
 

@@ -16,6 +16,10 @@ These are platform roles, separate from organization Owner, Admin, Billing, and 
 
 The application shell replaces organization navigation with a persistent Operations Center side menu on every `/admin/*` route. On smaller screens the same allowed destinations appear in a horizontally scrollable bottom menu. Selecting **Return to organization** restores the customer-facing application navigation.
 
+![Operations Center Overview](../assets/operations-center.png)
+
+![Operator Navigation Sidebar](../assets/operator-navigation.png)
+
 | Route | Purpose | Visible to |
 | --- | --- | --- |
 | `/admin` | Platform overview and role-specific shortcuts | Admin, BillingAdmin, Support |
@@ -37,11 +41,15 @@ Navigation visibility is a convenience, not authorization. Every API independent
 
 Sensitive values are redacted and results are reduced according to the operator's role.
 
+![Customer 360 Platform Inspection](../assets/customer-360.png)
+
 ## Risky operations
 
 Usage adjustment, billing reconciliation, organization status changes, and retention changes require appropriate platform roles. Customer-impacting mutations require a reason; high-risk actions also require exact organization confirmation.
 
 `POST /saas/admin/operations/preview` returns the confirmation string, impact, and warnings before supported mutations. The server revalidates everything when executing; preview is explanatory, not authorization.
+
+![Risky Operation Impact and String Confirmation Preview](../assets/operation-preview.png)
 
 Retry endpoints exist for failed Stripe inbox events, notifications, and lifecycle work. Retrying must preserve the original idempotency boundary.
 
@@ -55,6 +63,8 @@ Support access is globally off by default through `Saas.EnableSupportAccess`. Wh
 4. end, revoke, or expiry removes access immediately.
 
 `Saas.SupportAccessMaxMinutes` caps duration. Support access does not grant mutation rights, reveal credentials, or impersonate an organization member. Grant, start, use, end, revoke, and expiry are audited.
+
+![Support Access Four-Stage Lifecycle](../assets/support-access-lifecycle.png)
 
 ## Operational configuration
 

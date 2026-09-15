@@ -4,6 +4,8 @@ Next SaaS provides the generic foundation that most self-service B2B SaaS produc
 
 [Documentation home](../README.md) · [Next: local setup](02-local-setup.md)
 
+![Next SaaS Landing Page](../assets/landing-hero.png)
+
 ## What is included
 
 - Public product and pricing pages, registration, sign-in, and themed account management.
@@ -54,6 +56,8 @@ The template deliberately separates three kinds of decisions:
 3. **Customer-specific behavior** belongs in the RDBMS with an actor and reason, such as negotiated entitlements, retention exceptions, and legal holds.
 
 This separation keeps global policy reviewable while allowing safe runtime administration.
+
+![Configuration Ownership](../assets/configuration-ownership.png)
 
 ## Important invariants
 

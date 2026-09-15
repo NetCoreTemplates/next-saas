@@ -10,6 +10,8 @@ Customers choose a published Price from `/pricing` or `/billing`. `CreateCheckou
 
 The Stripe Customer Portal is the default UI for payment methods, invoices, cancellation, and subscription changes. The template links to Stripe-hosted invoice PDFs rather than generating duplicate tax documents.
 
+![Stripe Hosted Checkout](../assets/stripe-checkout.png)
+
 ## Models and APIs
 
 | Area | Types and routes |
@@ -17,7 +19,9 @@ The Stripe Customer Portal is the default UI for payment methods, invoices, canc
 | Local projection | `BillingSubscription`, `WorkspaceAccessMode` |
 | Start checkout | `POST /saas/billing/checkout` |
 | Confirm return | `POST /saas/billing/checkout/confirm` |
-| Customer Portal | `POST /saas/billing/portal` |
+| Customer Portal | `POST /saas/billing/portal
+
+![Stripe Customer Portal Management](../assets/billing-portal.png)` |
 | Stripe events | `POST /stripe/webhook`, `StripeEventInbox` |
 | Operator repair | reconciliation and Stripe retry APIs under `/saas/admin` |
 
@@ -37,11 +41,15 @@ Access modes are:
 
 `Saas.PastDueGraceDays` and `Saas.AfterGraceAccessMode` define global policy. Subscription transitions never delete customer data.
 
+![Active Subscription with Stripe Billing](../assets/billing-subscription.png)
+
 ## Webhook processing
 
 The webhook endpoint validates the raw body with `Stripe.WebhookSecret`, inserts each Stripe event once into `StripeEventInbox`, and enqueues `ProcessStripeEventCommand`. Duplicate delivery is safe. Processing updates the local projection and audit trail.
 
 Failed inbox rows retain attempts and error details. BillingAdmin or Admin operators can inspect and retry them from `/admin/operations`.
+
+![Stripe Webhook Ingestion Pipeline](../assets/webhook-flow.png)
 
 ## Configuration
 

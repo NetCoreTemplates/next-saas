@@ -18,6 +18,8 @@ The Stripe webhook is unauthenticated by user session and therefore authenticate
 
 Request-body logging explicitly excludes the webhook DTO. Keep the endpoint behind HTTPS and do not place a generic proxy/body transformation in front of signature verification.
 
+![Stripe Webhook Ingestion and Verification Flow](../assets/webhook-flow.png)
+
 ## Tenant correlation
 
 Checkout attaches opaque organization and plan-version metadata. Webhook application resolves the organization from controlled metadata or an existing Stripe Customer mapping. It never trusts a browser-provided subscription status.

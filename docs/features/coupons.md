@@ -8,6 +8,8 @@ The template lets SaaS Admin users create Stripe Coupons together with customer-
 
 Open `/admin/plans` and select the **Coupons** tab. Coupon management is deliberately separate from the **Plans** tab so changing a reusable discount cannot be confused with editing or publishing a plan version. The Coupons panel and its API request are loaded only while that tab is active.
 
+![Coupons and Promotion Codes Manager](../assets/coupons-manager.png)
+
 ## Behavior
 
 Checkout displays Stripe’s promotion-code entry. Customers enter a readable code; Stripe validates eligibility, duration, redemption limits, and expiry and applies the discount to the Subscription or invoice.

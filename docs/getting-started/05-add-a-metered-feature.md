@@ -43,6 +43,8 @@ Add a feature and meter to the `Saas` section of `MyApp/appsettings.json`:
 
 Configuration validation rejects duplicate or empty keys at startup.
 
+![Meter Definition in App Config](../assets/meter-definition.png)
+
 ## 2. Add plan allowances
 
 Add the feature and a `ReportsGenerated` seed property to the appropriate entries in `MyApp/plans.json`, then extend `Migration1001`’s `PlanSeed`, `SeedPlan`, and quota insertion to persist `reports.generated`.
@@ -57,6 +59,8 @@ For example, typical allowances might be:
 | Enterprise | Enabled | Unlimited or contract-specific |
 
 For an already running derived product, add a forward migration or create and publish plan drafts through administrative APIs. Never mutate a published version in place.
+
+![Plan Allowance in Plan Editor](../assets/plan-allowance.png)
 
 Recreate the development database after changing clean-state seeds:
 
@@ -103,6 +107,8 @@ var usage = manager.RecordUsage(Db, context.Workspace, subscription, context.Use
         MetadataJson = new { reportId }.ToJson(),
     });
 ```
+
+![Recording Usage and Enforcing Quotas](../assets/record-usage.png)
 
 Important rules:
 

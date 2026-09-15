@@ -22,6 +22,8 @@ In-app delivery is stored immediately when enabled. SMTP delivery is processed b
 
 Development mode records email as delivered to the local development inbox without contacting a provider. It does not prove SMTP or production deliverability.
 
+![Multi-Channel Notifications Delivery](../assets/audit-notifications.png)
+
 ## Configuration
 
 ```json
@@ -49,6 +51,8 @@ Supported providers are `Development`, `Smtp`, and `Disabled`. `Smtp` also requi
 ## Retention and recovery
 
 `Saas.NotificationRetentionDays` supplies global retention and can be overridden by an organization retention policy. Failed deliveries appear at `/admin/operations` for authorized retry. Retries reuse the existing delivery record and stop at `Notifications.MaxAttempts`.
+
+![Operations Queue with Failed Work and Retries](../assets/operations-queue-failed-work.png)
 
 ## Verify
 

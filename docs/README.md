@@ -2,6 +2,8 @@
 
 Next SaaS is a .NET 10, ServiceStack, ASP.NET Core Identity, React 19, and Next.js 16 template for multi-tenant B2B SaaS products. Acme, the included document-storage product, is intentionally small: it demonstrates subscriptions, quotas, storage, analytics, teams, and operations without imposing a product domain.
 
+![Next SaaS Operations Center](assets/operations-center.png)
+
 ## Start here
 
 New developers should follow the onboarding path in order. It takes the application from a clean checkout to a verified product change and optional Stripe sandbox subscription.
@@ -15,6 +17,8 @@ New developers should follow the onboarding path in order. It takes the applicat
 7. [Verify and ship](getting-started/07-verify-and-ship.md)
 
 ## Reference documentation
+
+![One-Runtime Production Architecture](assets/production-architecture.png)
 
 The remaining documentation is organized by task and can be read independently:
 

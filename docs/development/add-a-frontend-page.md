@@ -59,6 +59,8 @@ Add the route to the appropriate `AppShell` navigation group. Use `FeatureGate` 
 
 Reuse `PageHeading`, `Panel`, `StatusPill`, Lucide icons, and tokens in `styles/index.css`. Preserve the enterprise visual system instead of introducing page-local colors and component conventions.
 
+![Module Frontend User Interface](../assets/reference-module-ui.png)
+
 ## 3. Keep effects stable
 
 Memoize loader functions with `useCallback`, list only stable scalar dependencies, and trigger deliberate refreshes after mutations. Do not place response objects, newly created request objects, or unstable callbacks in effect dependencies.

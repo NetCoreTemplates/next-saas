@@ -22,6 +22,8 @@ These recipes are the shortest safe paths for extending Next SaaS while preservi
 
 For a new quota-controlled product capability, use this order:
 
+![Repository Map and Development Landmarks](../assets/project-map.png)
+
 1. define the request/response contract;
 2. register its feature and meter keys;
 3. add persistence and a migration if necessary;

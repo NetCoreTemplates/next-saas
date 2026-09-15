@@ -56,6 +56,8 @@ Use this checklist as the final template-to-product review. It is not a certific
 
 Record the reviewed revision, environment, non-secret configuration digest, migrations, dependency scan, penetration/security-test results, backup drill date, exceptions with owners/expiry, and final approvers.
 
+![Production Verification and Preflight Gates](../assets/release-gates.png)
+
 Run the executable baseline:
 
 ```bash

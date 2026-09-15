@@ -25,6 +25,8 @@ One identity can belong to multiple organizations. `UserWorkspacePreference` sto
 - The application shell reloads organization state after an explicit switch.
 - API keys do not follow the browser’s active preference; each key is permanently bound to its organization.
 
+![Organization Switcher](../assets/organization-switcher.png)
+
 If the preference is missing or invalid, the resolver selects an active membership using deterministic fallback rules and persists the selection.
 
 ## Customer roles
@@ -44,6 +46,8 @@ The Owner role has invariants that ordinary role editing cannot bypass:
 - only the Owner can schedule or cancel organization deletion.
 
 Role checks are centralized in `WorkspaceAuthorization`. UI visibility reflects permission but does not replace server checks.
+
+![Team Roles and Responsibilities](../assets/team-roles.png)
 
 ## Platform roles are separate
 
@@ -79,6 +83,8 @@ var file = Db.Single<StoredFile>(x =>
 ```
 
 Avoid loading by primary key and checking later, particularly before returning data or acting on an object-store key. Apply the boundary in reads, updates, deletes, downloads, analytics, exports, caches, and job commands.
+
+![Tenant Isolation and Cross-Tenant Rejection Test](../assets/isolation-test.png)
 
 ## API keys
 

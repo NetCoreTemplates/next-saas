@@ -10,6 +10,8 @@ Use a Background Job when work is dependent on an external provider, slow or var
 
 Keep small transactional database changes inside the request when the caller needs an immediate result. Do not enqueue merely to avoid defining correct transactional behavior.
 
+![Idempotent Background Job Recovery Flow](../assets/idempotent-job-recovery.png)
+
 ## Command model
 
 A job is a registered command with a small request payload:
@@ -72,6 +74,8 @@ For important workflows, the database row is the source of truth and the queue i
 5. Have the worker reload and claim current state.
 
 This pattern is used for Stripe inbox events, notifications, stored files, and workspace lifecycle requests. A periodic scanner can re-enqueue due persisted work if an enqueue was lost.
+
+![Webhook Ingestion and Asynchronous Execution Pipeline](../assets/webhook-flow.png)
 
 ## Idempotency and replay
 

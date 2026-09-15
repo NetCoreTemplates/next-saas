@@ -16,11 +16,15 @@ Organization lifecycle tools cover portable exports, delayed deletion, cancellat
 | Transfer ownership | `POST /saas/lifecycle/transfer` |
 | Leave organization | `POST /saas/lifecycle/leave` |
 
+![Organization Lifecycle Settings](../assets/lifecycle-settings.png)
+
 ## Organization export
 
 Export requests enqueue a background job that creates a ZIP containing a manifest, structured tenant records, and available files. The artifact is tenant-bound and expires after `Saas.ExportExpiryDays`. An expiry job removes the object and marks its metadata expired; later retention removes old lifecycle history.
 
 An export is a point-in-time portability package, not a backup or database restore format. Extend the manifest whenever a derived product adds customer-owned tables or objects.
+
+![Export Artifact Status and Checksum](../assets/export-status.png)
 
 ## Organization deletion
 
@@ -29,6 +33,8 @@ Only the Owner can request deletion. The UI explains that the organization, subs
 The request requires the exact organization confirmation and the Owner's current password. Paid subscriptions must first be Free or canceled. The organization enters `PendingDeletion` and becomes read-only during the configured delay. The Owner can cancel before processing starts.
 
 The deletion worker checks legal hold again, deletes tenant data and physical objects, revokes organization API keys, and anonymizes the organization tombstone. It is designed for safe retry.
+
+![Organization Deletion and Retention Lifecycle Timeline](../assets/lifecycle-timeline.png)
 
 ## Retention and legal holds
 

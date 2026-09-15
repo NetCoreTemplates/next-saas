@@ -15,6 +15,8 @@ Next SaaS uses ASP.NET Core configuration. Checked-in JSON provides safe develop
 
 The Admin UI may display global capabilities but does not mutate global JSON. This keeps infrastructure policy reviewable and avoids settings that differ silently between application instances.
 
+![Configuration Ownership: Global, Plan, and Customer Tiers](../assets/configuration-ownership.png)
+
 ## Main sections
 
 - `AppConfig` — canonical public base URL.

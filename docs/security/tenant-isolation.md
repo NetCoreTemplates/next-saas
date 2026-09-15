@@ -25,6 +25,8 @@ var widget = Db.Single<Widget>(x =>
 
 Return `404` for inaccessible resource IDs where distinguishing “exists elsewhere” would leak tenant information. Include indexed `WorkspaceId` on tenant-owned tables and use composite unique constraints for organization-scoped business keys.
 
+![Tenant-Scoped Query Pattern](../assets/scoped-query.png)
+
 ## Storage, jobs, and analytics
 
 - File object keys are opaque and metadata is tenant-bound; physical paths are never accepted from users.
@@ -47,6 +49,8 @@ For every new tenant-owned resource:
 4. attempt list, read, update, delete, export, job, and API-key access across tenants;
 5. test inactive membership and deleted/suspended organization state;
 6. inspect error bodies, timing, audit, and logs for information leakage.
+
+![Tenant Isolation and Cross-Tenant Rejection Test](../assets/isolation-test.png)
 
 ## Related documentation
 

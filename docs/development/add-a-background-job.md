@@ -38,6 +38,8 @@ public class ProcessWidgetCommand(IDbConnectionFactory dbFactory)
 
 Do not serialize uploads, secrets, large documents, sessions, or an open database connection into a job request.
 
+![Idempotent Background Job Recovery](../assets/idempotent-job-recovery.png)
+
 ## 2. Register and enqueue
 
 Register the command in `MyApp/Configure.BackgroundJobs.cs`:

@@ -39,6 +39,8 @@ Free and contact-sales plans are skipped. Published subscriptions remain pinned 
 
 Automatic catalog provisioning is enabled for sandbox keys by default. Live provisioning remains blocked unless `Stripe.AllowLiveCatalogProvisioning` is explicitly enabled.
 
+![Stripe Product and Price Provisioning](../assets/stripe-provisioning.png)
+
 ## 3. Install and authenticate Stripe CLI
 
 Install Stripe CLI using Stripe’s instructions, then authenticate:
@@ -64,7 +66,11 @@ export Stripe__WebhookSecret=whsec_...
 
 Keep the listener running during local billing tests. Its secret changes when a new listener session is created.
 
+![Stripe Webhook Ingestion Pipeline](../assets/webhook-flow.png)
+
 ## 4. Test checkout
+
+![Stripe Hosted Checkout](../assets/stripe-checkout.png)
 
 Sign in as a normal customer, open `/pricing` or `/billing`, and choose a paid plan. Stripe Checkout determines the button text:
 
@@ -77,6 +83,8 @@ Complete checkout with a Stripe test payment method. The success URL returns to 
 Webhooks remain essential after checkout. Renewals, payment failures, cancellations, and Customer Portal changes do not return through the checkout confirmation path.
 
 ## 5. Verify local state
+
+![Active Subscription with Stripe Billing](../assets/billing-subscription.png)
 
 Check:
 

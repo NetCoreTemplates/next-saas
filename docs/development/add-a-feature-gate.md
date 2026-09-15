@@ -43,6 +43,8 @@ public class QueryWidgets : IGet, IReturn<QueryWidgetsResponse> { }
 
 The DTO attribute is the primary boundary. UI hiding improves usability but is not authorization.
 
+![Declarative Feature Gating](../assets/feature-gate.png)
+
 ## 4. Explain it in the frontend
 
 Use effective entitlements from the dashboard with `FeatureGate`:
@@ -54,6 +56,8 @@ Use effective entitlements from the dashboard with `FeatureGate`:
 ```
 
 For navigation, either hide unavailable destinations or show an upgrade affordance consistently. Handle a server-side `403` because entitlement state can change after the page loads.
+
+![Feature Denied and Upgrade Prompt](../assets/feature-denied.png)
 
 ## 5. Verify
 

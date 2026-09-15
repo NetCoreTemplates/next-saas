@@ -58,6 +58,8 @@ This deletes the local SQLite database and local file store, then recreates user
 
 - `MyApp/plans.json` is an empty-state catalog seed, not ongoing catalog synchronization.
 - Use migrations for deterministic reference data required by code.
+
+![Initial Database Migration and Plan Seed](../assets/plan-seed.png)
 - Use the Admin draft/publish workflow for normal commercial plan changes.
 - Give tenant tables indexed `WorkspaceId` fields and enforce business uniqueness in the database.
 - Test SQLite and PostgreSQL-specific behavior when changing concurrency, constraints, or SQL.

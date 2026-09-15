@@ -13,11 +13,15 @@ Anonymous health responses are intentionally terse. Detailed dependency and queu
 
 When replacing `IFileStore`, replace the local-path readiness check with a bounded provider check that proves the permissions required by the application without creating excessive cost.
 
+![Container Liveness and Readiness Probes](../assets/health-probes.png)
+
 ## Request correlation
 
 Every response includes `X-Request-Id`. A valid incoming value of at most 128 characters is preserved; otherwise ASP.NET trace context supplies it. The identifier becomes `HttpContext.TraceIdentifier`, a logging scope field, and audit correlation data.
 
 Return this identifier in customer-facing error support flows. Forward it through outbound provider calls and background-job metadata where practical.
+
+![Sanitized Request ID Correlation linking Client to Structured Server Log](../assets/correlation.png)
 
 ## Request logs
 

@@ -16,6 +16,8 @@ Platform Admin can store per-organization overrides and legal hold in `Workspace
 
 Legal hold excludes the organization from scheduled pruning and blocks deletion both at request time and inside the delayed worker. The second check handles holds applied after deletion was scheduled.
 
+![Organization Deletion and Retention Lifecycle Timeline](../assets/lifecycle-timeline.png)
+
 ## Scheduled cleanup
 
 `ApplyDataRetentionCommand` runs daily in bounded batches. It prunes eligible usage events/rollups, delivered or suppressed notifications, deleted-file metadata, expired export metadata, completed lifecycle history, and audit events.
@@ -23,6 +25,8 @@ Legal hold excludes the organization from scheduled pruning and blocks deletion 
 Each run writes `DataRetentionRun` status, counts, timestamps, and errors. Large backlogs converge across successive runs because each category is batch-limited.
 
 Export bytes expire hourly through `ExpireDataExportsCommand`; lifecycle metadata remains until its history window. A successful metadata cleanup is not a substitute for proving the underlying object was deleted.
+
+![Export Artifact Status and Expiration](../assets/export-status.png)
 
 ## Operational review
 

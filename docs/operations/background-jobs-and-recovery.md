@@ -28,6 +28,8 @@ Data retention runs daily. Email, webhook, file deletion, notification, and life
 
 Use durable domain/inbox status as the business truth. A job record alone is not proof that a Stripe event, notification, or deletion completed.
 
+![Operations Queue and Failed Work Inspection](../assets/operations-queue-failed-work.png)
+
 ## Retry procedure
 
 1. identify the domain/inbox row and its organization;
@@ -39,6 +41,8 @@ Use durable domain/inbox status as the business truth. A job record alone is not
 7. record any manual intervention.
 
 Do not enqueue a brand-new business operation with a new idempotency key merely to clear an error. Preserve original event/reservation/provider identifiers.
+
+![Idempotent Background Job Recovery](../assets/idempotent-job-recovery.png)
 
 ## Stalled work
 

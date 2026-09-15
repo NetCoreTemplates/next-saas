@@ -45,6 +45,8 @@ cd MyApp
 dotnet watch
 ```
 
+![Running dotnet watch in Local Development](../assets/dotnet-watch.png)
+
 Open `https://localhost:5001`. ASP.NET Core owns the public origin and starts the Next.js development process automatically. Browser API requests therefore use the same origin as Identity cookies and ServiceStack APIs.
 
 The first Development start with no application database:
@@ -58,6 +60,8 @@ The first Development start with no application database:
 ## Development accounts
 
 All seeded users use the password `p@55wOrd`.
+
+![Sign In with Seeded Accounts](../assets/signup-page.png)
 
 | Account | Intended use |
 | --- | --- |

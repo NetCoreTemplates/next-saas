@@ -31,3 +31,7 @@ Security in Next SaaS is layered across ASP.NET Core Identity, ServiceStack requ
 
 Perform a product-specific threat model before launch. Authentication methods, data sensitivity, compliance obligations, integrations, and hosting architecture can materially change the required controls.
 
+![Support Access Four-Stage Lifecycle](../assets/support-access-lifecycle.png)
+
+![Role and Authorization Boundaries](../assets/role-boundaries.png)
+

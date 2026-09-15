@@ -28,6 +28,8 @@ High-value backend cases include:
 
 `ArchitectureGuardTests` protects template-wide invariants that are easy to accidentally weaken.
 
+![Automated Unit and Integration Tests](../assets/reference-module-tests.png)
+
 ## Frontend tests
 
 From `MyApp.Client`:
@@ -49,6 +51,8 @@ When testing effects, assert the request count as well as rendered output. This 
 ```
 
 This builds and tests .NET, type-checks/tests/builds React, then starts production mode against a fresh temporary SQLite database and verifies empty-state bootstrap. Run it before handing off any cross-cutting change.
+
+![Production Verification and Preflight Gates](../assets/release-gates.png)
 
 ## Test-data safety
 

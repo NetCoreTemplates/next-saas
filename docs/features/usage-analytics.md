@@ -13,6 +13,8 @@ Both require `analytics.basic`. Advanced breakdowns can be gated with `analytics
 
 The `/usage` page should fetch when the organization, meter, or date range changes. Keep request parameters and callback dependencies stable to avoid render-driven request loops.
 
+![Customer Usage Dashboard and Analytics](../assets/customer-usage.png)
+
 ## Data flow
 
 Successful quota operations append `UsageEvent` rows and update period aggregates. `BuildUsageRollupsCommand` periodically writes `UsageDailyRollup` rows by organization and, when allowed by the meter definition, by user. Analytics reads rollups and falls back to raw events when a rollup is not yet available.
@@ -22,6 +24,8 @@ Successful quota operations append `UsageEvent` rows and update period aggregate
 ## SaaS-admin analytics
 
 `GET /saas/admin/analytics` provides platform metrics, organization growth, plan mix, and quota pressure for Admin users. These appear at `/admin/usage` and in the `/admin` overview. Customer 360 at `/admin/customers` includes current usage summaries for support and billing diagnosis.
+
+![Platform Usage Analytics and Quota Pressure](../assets/platform-usage.png)
 
 ## Adding analytics to a feature
 

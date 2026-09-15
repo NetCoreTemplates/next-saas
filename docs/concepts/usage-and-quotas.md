@@ -52,6 +52,8 @@ Examples: uploads, batch jobs, generation work with a bounded maximum.
 
 The event/aggregate write is performed transactionally. A conditional aggregate update prevents two concurrent requests from both consuming the final unit.
 
+![Quota Enforcement Boundary](../assets/quota-boundary.png)
+
 ## Effective allowance
 
 For each meter, `ISaasManager` resolves:
@@ -94,6 +96,8 @@ If work fails, pending reservations are released and partial content is removed.
 
 Deletion runs asynchronously, removes the object idempotently, writes linked negative gauge adjustments, and marks metadata deleted.
 
+![Capacity Reservation and Settlement Flow](../assets/reservation-flow.png)
+
 ## Periods and reset behavior
 
 `MeterReset` may be:
@@ -109,6 +113,8 @@ When a counter period elapses, a new period and aggregate are created. Old immut
 Crossing configured `Saas.QuotaWarningPercentages` writes deduplicatable audit/notification intent. A rejected hard-limit operation writes diagnostic audit state and returns a stable quota error without an accepted usage event.
 
 Quota warnings do not raise the limit. Customer upgrades and audited overrides change effective allowance.
+
+![Customer Quota and Usage Telemetry](../assets/customer-usage.png)
 
 ## Analytics
 

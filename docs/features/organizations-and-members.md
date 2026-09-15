@@ -33,6 +33,8 @@ Core models are `Workspace`, `WorkspaceMember`, and `UserWorkspacePreference`.
 
 Owner controls ownership and deletion. Admin manages settings, members, and exports. Billing manages billing. Member uses entitled features. Server-side `WorkspaceAuthorization` owns these decisions.
 
+![Team Roles and Member Management](../assets/team-roles.png)
+
 Platform Admin/BillingAdmin/Support roles are separate and do not create customer membership.
 
 ## Invitations
@@ -40,6 +42,8 @@ Platform Admin/BillingAdmin/Support roles are separate and do not create custome
 Invitations bind a role and normalized email to a random, one-way-hashed token and expiry. Acceptance requires the authenticated user’s verified email to match. Resend rotates delivery state; revoke or expiry makes the token unusable.
 
 `Saas.InvitationExpiryDays` is global. Delivery uses the notification system, so production requires working SMTP.
+
+![Invite Organization Member](../assets/invite-member.png)
 
 ## Configuration
 
@@ -58,6 +62,8 @@ Every resource lookup includes the resolved organization. Switching active organ
 - Wrong authenticated email accepts token: reject.
 - Owner attempts to leave: require ownership transfer.
 - Member changes Owner through ordinary role API: reject.
+
+![Owner Protection and Transfer](../assets/owner-protection.png)
 - Deleted/disabled membership accesses data: resolver denies it.
 
 ## Extension points

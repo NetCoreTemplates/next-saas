@@ -17,6 +17,8 @@ Only platform Admin users manage the catalog from the **Plans** tab at `/admin/p
 
 Publishing retires the prior published version. Existing subscriptions remain pinned to their version; new selections use the new version.
 
+![Plan Editor and Version Management](../assets/plan-editor.png)
+
 ## Models
 
 - `SaasPlan` — stable identity, code, and catalog-level display data.
@@ -24,6 +26,8 @@ Publishing retires the prior published version. Existing subscriptions remain pi
 - `SaasPlanPrice` — currency, monthly/yearly interval, minor-unit amount, Stripe Price mapping, and active status.
 - `SaasPlanFeature` — registered feature grant.
 - `SaasPlanQuota` — registered meter allowance, enforcement, and rollover setting.
+
+![Immutable Plan Versions and Historical Pinning](../assets/plan-versions.png)
 
 `MyApp/plans.json` seeds these records only for an empty database.
 
@@ -41,6 +45,8 @@ Amounts are integer minor currency units. Supported currencies are defined globa
 
 A self-service paid Price must be active, positive, published, and mapped to a Stripe `price_...` identifier. Free plans require no Stripe Price. Contact-sales plans intentionally bypass self-service Checkout.
 
+![Multi-Currency and Interval Plan Prices](../assets/plan-prices.png)
+
 Stripe catalog provisioning uses plan metadata and idempotency keys. It fills draft mappings but never publishes a plan automatically. Live provisioning requires explicit opt-in.
 
 ## Trials
@@ -52,6 +58,8 @@ Trial duration belongs to a plan version. Global policy controls whether it is h
 - `Saas.TrialRequiresPaymentMethod` controls upfront payment collection.
 
 The admin editor accepts 1–365 days. Stripe determines hosted Checkout wording and trial payment behavior. A trial without a payment method is configured to cancel safely if no payment method exists at trial end.
+
+![Trial Duration and Payment Policy](../assets/trial-settings.png)
 
 ## Authorization and audit
 

@@ -29,6 +29,10 @@ Membership must be active and match the resolved organization. Ordinary member r
 
 Platform membership does not create organization membership. Support users need an approved, started grant for redacted customer context; Admin has direct platform authority and does not impersonate a member.
 
+![Role and Authorization Boundaries](../assets/role-boundaries.png)
+
+![Team Roles Configuration](../assets/team-roles.png)
+
 ## Enforcement order
 
 For a customer operation:

@@ -60,6 +60,8 @@ public class WidgetServices(IWorkspaceContextResolver workspaceContexts) : Servi
         return new CreateWidgetResponse { Id = widget.Id };
     }
 }
+
+![Service Implementation and Context Resolution](../assets/reference-module-service.png)
 ```
 
 Follow existing service base/context patterns rather than trusting a `WorkspaceId` sent by a customer. API-key calls resolve their organization from the credential binding.

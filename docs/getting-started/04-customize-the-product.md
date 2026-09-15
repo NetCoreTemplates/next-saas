@@ -31,6 +31,8 @@ Product__SalesEmail=sales@your-domain.com
 
 Do not put a product name or support address in customer records. These values describe the whole deployment.
 
+![Product Configuration Architecture](../assets/product-config.png)
+
 ## 2. Update public content
 
 The primary public UI lives in:
@@ -51,6 +53,8 @@ rg -n "Acme|document|storage" MyApp MyApp.Client MyApp.ServiceInterface MyApp.Se
 ```
 
 Keep intentional infrastructure names such as `Workspace`, `StoredFile`, and database migrations unless your replacement domain makes them misleading.
+
+![Public Content and Pricing Page](../assets/public-content.png)
 
 ## 3. Adjust the visual identity
 
@@ -103,7 +107,11 @@ A meter describes measurable consumption:
 
 Treat keys as public identifiers once customer data exists. Rename display text freely; migrate keys deliberately.
 
+![Feature and Meter Declarations](../assets/features-meters.png)
+
 ## 5. Customize the initial plan catalog
+
+![Initial Database Migration and Plan Seed](../assets/plan-seed.png)
 
 `MyApp/plans.json` seeds a clean database. Prices are integer minor currency units: `4900` means USD 49.00 when the currency has two decimal places.
 

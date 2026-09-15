@@ -22,6 +22,8 @@ The script runs:
 
 The verification harness explicitly disables production-policy enforcement because it is testing deterministic empty-state construction with isolated local infrastructure. It does not weaken a normal Production start.
 
+![Release Verification and Preflight Gates](../assets/release-gates.png)
+
 ## 2. Choose a deployment profile
 
 Start with one of the checked-in JSON profiles rather than assembling configuration from scratch:
@@ -120,6 +122,8 @@ Use the same environment and database connection as the deployment. Back up an e
 ## 7. Build and publish
 
 The project publish target builds the static Next.js application and copies it into the ASP.NET Core `wwwroot`. A production deployment runs one ASP.NET Core process; it does not require a Next.js server.
+
+![Migration and Deployment Pipeline Flow](../assets/deploy-flow.png)
 
 ```bash
 cd MyApp.Client

@@ -15,6 +15,8 @@ The Acme sample stores ordinary files to demonstrate feature gates, document-cou
 
 Upload, download, and delete require the `files.basic` entitlement. Every lookup is constrained to the active organization. Upload is multipart and requires an `IdempotencyKey`.
 
+![Documents and File Storage Management](../assets/documents-manager.png)
+
 ## Storage model
 
 `StoredFile` keeps tenant-safe metadata in the RDBMS. `IFileStore` stores bytes behind an opaque object key and exposes write, read, delete, and existence operations. `LocalFileStore` is the default implementation and writes beneath `FileStorage.RootPath`.
@@ -32,6 +34,8 @@ An upload follows a reserve/perform/settle pattern:
 5. compensate reservations and remove partial bytes if any step fails.
 
 Delete makes the file unavailable and queues physical cleanup. This keeps the customer request fast and makes retries safe.
+
+![Capacity Reservation and Settlement Flow](../assets/reservation-flow.png)
 
 ## Configuration
 

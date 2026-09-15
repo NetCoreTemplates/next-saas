@@ -25,6 +25,8 @@ ASP.NET Core + ServiceStack
         └── SMTP
 ```
 
+![One-Runtime Production Architecture](../assets/production-architecture.png)
+
 In Development, ASP.NET Core starts and proxies the Next.js development server for HMR. In Production, `next build` creates static files that are copied into `wwwroot`. Identity cookies and APIs therefore retain one public origin in both environments.
 
 ## Request path
@@ -61,6 +63,8 @@ Stripe is not queried on an authorization or quota hot path. Signed webhooks and
 | `MyApp.ServiceInterface` | Services, policy, provider abstractions, telemetry, and job commands |
 | `MyApp` | Host composition, Identity, plugins, migrations, configuration, health, and static assets |
 | `MyApp.Client` | Static Next.js application and generated TypeScript client |
+
+![End-to-End Typed ServiceStack Client](../assets/typed-client.png)
 | `MyApp.Tests` | Unit, architecture, security, isolation, migration, and optional integration tests |
 
 Dependencies point inward through contracts and interfaces. Product services should not acquire frontend dependencies or directly embed provider-specific policy.

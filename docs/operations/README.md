@@ -4,6 +4,8 @@ These guides cover the path from validated configuration to a recoverable, obser
 
 [Documentation home](../README.md)
 
+![Next SaaS Operations Center](../assets/operations-center.png)
+
 ## Runbooks
 
 | Need | Guide |
@@ -32,4 +34,6 @@ These guides cover the path from validated configuration to a recoverable, obser
 9. monitor errors, queue failures, quota rejection, and billing reconciliation.
 
 The included Kamal/GitHub workflow is a starting point. Adapt migration ordering, storage, backup, secret management, and observability to the target platform before accepting production data.
+
+![Operations Center Side Navigation](../assets/operator-navigation.png)
 

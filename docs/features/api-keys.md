@@ -10,6 +10,8 @@ An authenticated member selects an organization, opens **Settings → API keys**
 
 The management page intentionally asks only for a name and optional expiry. The server assigns the template's standard scopes: `usage:read`, `usage:write`, and `workspace:read`.
 
+![API Keys Manager](../assets/api-keys-manager.png)
+
 ## ServiceStack integration
 
 `Configure.ApiKeys.cs` registers `ApiKeysFeature` and applies SaaS-specific request and response filters around ServiceStack's API-key DTOs.
@@ -26,9 +28,13 @@ The filters:
 
 Use the generated ServiceStack DTOs for the exact API-key routes and payloads. The account UI lives in `MyApp/Areas/Identity/Pages/Account/Manage/ApiKeys.cshtml`.
 
+![API Key Fingerprint and Metadata](../assets/api-key-fingerprint.png)
+
 ## Authentication and isolation
 
 Send a credential using the ServiceStack bearer or API-key authentication supported by `ApiKeysFeature`. The organization is resolved from the stored key, not from the browser's active selection or a caller-supplied organization ID.
+
+![Programmatic API Request with Bearer API Key](../assets/api-request.png)
 
 Revoked, expired, or cross-organization credentials fail before product data is returned. Credential material must never be logged or added to audit metadata.
 

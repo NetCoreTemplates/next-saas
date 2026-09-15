@@ -19,11 +19,17 @@ Authorization: Bearer ak-...
 
 The configured standard scopes are `usage:read`, `usage:write`, and `workspace:read`. The simplified UI intentionally does not let customers compose arbitrary scopes.
 
+![API Keys Creation and Standard Scopes](../assets/api-keys-manager.png)
+
+![API Key Fingerprint Display](../assets/api-key-fingerprint.png)
+
 ## Storage sensitivity
 
 The current ServiceStack key verifier looks up the supplied value in the `ApiKey` table. Treat that table, database credentials, backups, query tooling, and administrator access as credential-bearing sensitive material. A derived product requiring non-recoverable at-rest keys should implement a prefix/identifier plus strong one-way verifier design and a migration/rotation plan.
 
 Never write raw keys to application logs, audit detail, support notes, analytics dimensions, URLs, or client error reporting.
+
+![Programmatic API Request with Bearer Token](../assets/api-request.png)
 
 ## Abuse controls
 

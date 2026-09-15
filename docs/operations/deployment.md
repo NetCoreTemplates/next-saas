@@ -16,6 +16,10 @@ The checked-in GitHub workflows form three stages:
 
 Both downstream workflows accept manual dispatch. Automatic runs proceed only after the preceding workflow succeeds and use its exact `head_sha`; this prevents a newer branch tip from being deployed in place of the revision that passed CI.
 
+![Migration and Deployment Pipeline Flow](../assets/deploy-flow.png)
+
+![One-Runtime Production Architecture](../assets/production-architecture.png)
+
 ## First deployment prerequisites
 
 Before pushing the release commit:

@@ -15,6 +15,8 @@ Organization audit access requires the `audit.read` entitlement. Platform search
 
 Organization members use `/audit`. Platform Admin users search and export the cross-organization audit stream from `/admin/security`.
 
+![Customer Audit Events Stream](../assets/audit-events.png)
+
 ## Event shape
 
 `SaasAuditEvent` contains organization, category, action, outcome, actor, subject, request correlation, network/client context, timestamp, and sanitized metadata. Use registered, stable action names so filters, exports, alerts, and downstream integrations do not depend on prose.
@@ -24,6 +26,8 @@ Organization members use `/audit`. Platform Admin users search and export the cr
 Record an event at the point a meaningful decision commits: successful and denied privileged changes, billing transitions, credential management, lifecycle requests, support access, and operator actions. Include enough identifiers to investigate the event without copying entire request bodies.
 
 The audit helper redacts known sensitive keys and credential-like patterns and limits metadata size. Redaction is a backstop, not permission to pass secrets. Never audit passwords, raw API keys, Stripe secrets, invitation tokens, export contents, or uploaded file bytes.
+
+![Tamper-Evident Audit Trail and Multi-Channel Notifications](../assets/audit-notifications.png)
 
 ## Retention and export
 
