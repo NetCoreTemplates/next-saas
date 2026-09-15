@@ -244,7 +244,8 @@ public class SaasPlatformServices(
             ? Db.Select<UsageEvent>(x => x.WorkspaceId == context.Workspace.Id && x.MeterKey == selected && x.RecordedDate >= from)
             : [];
         var workspaceRollups = rollups.Where(x => x.DimensionType == "workspace" && x.DimensionValue == "all")
-            .ToDictionary(x => x.Date.Date, x => x.Units);
+            .GroupBy(x => x.Date.Date)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.Units));
         var series = Enumerable.Range(0, days).Select(i => from.AddDays(i)).Select(date => new UsageSeriesPoint {
             Date = date,
             Units = workspaceRollups.TryGetValue(date, out var units) ? units : events.Where(x => x.RecordedDate.Date == date).Sum(x => x.Units),
