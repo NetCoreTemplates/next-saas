@@ -68,6 +68,12 @@ public class SecurityStartupFilter(
         {
             if (config.EnableSecurityHeaders && !environment.IsDevelopment())
             {
+                // Decide on the path as the request arrives. Routing, static-file handling, and
+                // SPA fallbacks can rewrite Request.Path before OnStarting runs, which otherwise
+                // makes the policy depend on how a given path happened to be served.
+                var policy = WebSecurityPolicy.IsToolingPath(context.Request.Path, config.ToolingPaths)
+                    ? toolingPolicy
+                    : config.ContentSecurityPolicy;
                 context.Response.OnStarting(() =>
                 {
                     var headers = context.Response.Headers;
@@ -76,9 +82,6 @@ public class SecurityStartupFilter(
                     headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
                     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
                     headers["Cross-Origin-Opener-Policy"] = "same-origin";
-                    var policy = WebSecurityPolicy.IsToolingPath(context.Request.Path, config.ToolingPaths)
-                        ? toolingPolicy
-                        : config.ContentSecurityPolicy;
                     if (!string.IsNullOrWhiteSpace(policy))
                         headers["Content-Security-Policy"] = policy;
                     return Task.CompletedTask;
