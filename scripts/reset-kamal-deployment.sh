@@ -83,6 +83,21 @@ if (( ${#ACCESSORY_CONTAINERS[@]} )); then
   mapfile -t ACCESSORY_CONTAINERS < <(printf '%s\n' "${ACCESSORY_CONTAINERS[@]}" | sort -u)
 fi
 
+# kamal-proxy registers one service per role per scope, named "<service>-<role>[-<destination>]".
+ROLES=()
+while IFS= read -r role; do ROLES+=("$role"); done < <(awk '
+  /^servers:/ { in_servers = 1; next }
+  /^[^[:space:]#]/ { in_servers = 0 }
+  in_servers && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { gsub(/[ :]/, ""); print }
+' "$PROJECT_ROOT/config/deploy.yml")
+PROXY_SERVICES=()
+for role in "${ROLES[@]}"; do
+  PROXY_SERVICES+=("$SERVICE_NAME-$role")
+  for destination in "${DESTINATIONS[@]}"; do
+    PROXY_SERVICES+=("$SERVICE_NAME-$role-$destination")
+  done
+done
+
 # Kamal stores env files (including APPSETTINGS_JSON_BASE64) in ~/.kamal/apps/<service>-<destination>,
 # and `kamal app remove` only removes the one for the destination it was given. The bare
 # "<service>" entry covers deployments made before this repository used destinations.
@@ -102,6 +117,7 @@ else
   printf '  accessory containers: none declared by any destination\n'
 fi
 printf '  app directories:      %s\n' "$(printf '~/.kamal/apps/%s ' "${APP_DIRECTORIES[@]}" | sed 's/ $//')"
+printf '  proxy services:       %s\n' "${PROXY_SERVICES[*]}"
 printf '  persistent state:     %s\n' "$REMOTE_ROOT"
 printf '  preserved:            shared proxy/network, unrelated services, GitHub secrets, Stripe\n'
 
@@ -142,10 +158,15 @@ export SERVICE="$SERVICE_NAME"
 # all before this repository used destinations, is invisible to it. Sweep every scope so
 # the reset is complete whichever way the previous release was deployed. The empty scope
 # is the legacy no-destination deployment.
-KAMAL_SCOPES=("")
+# Order matters. Without -d, Kamal's label filters omit destination= and therefore stop
+# every destination's containers, and it only deregisters a proxy service while that
+# service's container is still running. Run the specific destinations first so each one
+# deregisters itself, and leave the unfiltered legacy scope for last.
+KAMAL_SCOPES=()
 for destination in "${DESTINATIONS[@]}"; do
   KAMAL_SCOPES+=("$destination")
 done
+KAMAL_SCOPES+=("")
 
 for scope in "${KAMAL_SCOPES[@]}"; do
   scope_args=()
@@ -182,6 +203,19 @@ done
 # Kamal's own removal is destination-filtered, so anything deployed under a scope this
 # repository no longer defines would survive. This exact-label sweep guarantees the clean
 # slate. The label is matched exactly, so a service such as "next-static" is never touched.
+# Kamal only deregisters a proxy service when it finds a running container for it, so a
+# route can outlive the container and leave the host returning 502 or, worse, collide with
+# the next deployment under a different destination. Remove each by name regardless.
+printf 'Removing kamal-proxy registrations...\n'
+for proxy_service in "${PROXY_SERVICES[@]}"; do
+  kamal server exec --no-interactive -d "$PROVIDER" \
+    "docker exec kamal-proxy kamal-proxy remove '$proxy_service' >/dev/null 2>&1 || true"
+done
+# Kamal wraps this whole string in single quotes for the remote shell, so the check must
+# contain no single quotes and no shell metacharacters. The service name is already
+# restricted to [a-z0-9-], which makes a fixed-string grep safe unquoted.
+VERIFY+=" && test -z \"\$(docker exec kamal-proxy kamal-proxy list 2>/dev/null | grep -F -- $SERVICE_NAME- || true)\""
+
 printf 'Sweeping any remaining containers and images labelled service=%s...\n' "$SERVICE_NAME"
 kamal server exec --no-interactive -d "$PROVIDER" \
   "docker ps -aq --filter label=service='$SERVICE_NAME' | xargs -r docker rm --force >/dev/null 2>&1 || true"
