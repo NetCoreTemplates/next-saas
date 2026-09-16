@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using MyApp.Data;
 using MyApp.Migrations;
 using MyApp.ServiceModel;
@@ -31,7 +33,19 @@ public class ConfigureDbMigrations : IHostingStartup
                     // bootstrapped from the current model; this template deliberately
                     // supports clean database recreation during active development.
                     if (db.Database.IsNpgsql())
-                        db.Database.EnsureCreated();
+                    {
+                        // EnsureCreated() only creates tables when the database has none, and
+                        // ServiceStack features such as API keys and CrudEvents create theirs
+                        // while the application starts, which happens before this deployment
+                        // task runs. Create the Identity schema explicitly when it is the part
+                        // that is missing, rather than relying on the database being untouched.
+                        var creator = db.Database.GetService<IRelationalDatabaseCreator>();
+                        if (!creator.Exists())
+                            creator.Create();
+                        using var schemaDb = dbFactory.Open();
+                        if (!schemaDb.TableExists("AspNetUsers"))
+                            creator.CreateTables();
+                    }
                     else if (db.Database.GetMigrations().Any())
                         db.Database.Migrate();
                     else
