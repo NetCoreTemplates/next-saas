@@ -1,4 +1,3 @@
 # Tenancy and authorization
 
-The canonical tenancy guide is now [docs/concepts/organizations-and-tenancy.md](docs/concepts/organizations-and-tenancy.md).
-
+The canonical tenancy guide is now [published with the Next SaaS documentation](https://react-templates.net/docs/next-saas/concepts/organizations-and-tenancy).

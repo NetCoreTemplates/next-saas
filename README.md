@@ -24,27 +24,27 @@ Customer-facing screens call the tenant/account boundary an **Organization**. In
 
 ## Documentation
 
-> **Start with the [Next SaaS documentation](docs/README.md).** This README is a quick reference. The guides in [`docs/`](docs/README.md) explain how to use, customize, and ship the template, step by step.
+> **Start with the [Next SaaS documentation](https://react-templates.net/docs/next-saas).** This README is a quick reference. The published guides explain how to use, customize, and ship the template, step by step.
 
 New to the template? Work through the onboarding guides in order:
 
-1. [Understand the template](docs/getting-started/01-overview.md)
-2. [Run it locally](docs/getting-started/02-local-setup.md)
-3. [Tour the project](docs/getting-started/03-project-tour.md)
-4. [Customize the product](docs/getting-started/04-customize-the-product.md)
-5. [Add a metered feature](docs/getting-started/05-add-a-metered-feature.md)
-6. [Connect Stripe sandbox](docs/getting-started/06-connect-stripe-sandbox.md)
-7. [Verify and ship](docs/getting-started/07-verify-and-ship.md)
+1. [Understand the template](https://react-templates.net/docs/next-saas/getting-started/overview)
+2. [Run it locally](https://react-templates.net/docs/next-saas/getting-started/local-setup)
+3. [Tour the project](https://react-templates.net/docs/next-saas/getting-started/project-tour)
+4. [Customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product)
+5. [Add a metered feature](https://react-templates.net/docs/next-saas/getting-started/add-a-metered-feature)
+6. [Connect Stripe sandbox](https://react-templates.net/docs/next-saas/getting-started/connect-stripe-sandbox)
+7. [Verify and ship](https://react-templates.net/docs/next-saas/getting-started/verify-and-ship)
 
 Then use the reference guides, which you can read in any order:
 
 | Section | What it covers |
 | --- | --- |
-| [Concepts](docs/concepts/architecture.md) | Architecture, organizations and tenancy, plans and entitlements, usage and quotas, background processing |
-| [Features](docs/README.md#reference-documentation) | Billing, plans and trials, coupons, members, API keys, file storage, analytics, notifications, audit logs, data lifecycle, Operations Center |
-| [Development](docs/development/README.md) | Recipes for APIs, feature gates, meters, background jobs, migrations, frontend pages, DTO generation, testing, AI-assisted development |
-| [Operations](docs/operations/README.md) | Configuration, secrets, deployment, database and storage, health, job recovery, retention, backup and restore, troubleshooting |
-| [Security](docs/security/README.md) | Authentication, authorization, tenant isolation, API credentials, webhook security, support access, privacy, production security review |
+| [Concepts](https://react-templates.net/docs/next-saas/concepts/architecture) | Architecture, organizations and tenancy, plans and entitlements, usage and quotas, background processing |
+| [Features](https://react-templates.net/docs/next-saas#reference-documentation) | Billing, plans and trials, coupons, members, API keys, file storage, analytics, notifications, audit logs, data lifecycle, Operations Center |
+| [Development](https://react-templates.net/docs/next-saas/development) | Recipes for APIs, feature gates, meters, background jobs, migrations, frontend pages, DTO generation, testing, AI-assisted development |
+| [Operations](https://react-templates.net/docs/next-saas/operations) | Configuration, secrets, deployment, database and storage, health, job recovery, retention, backup and restore, troubleshooting |
+| [Security](https://react-templates.net/docs/next-saas/security) | Authentication, authorization, tenant isolation, API credentials, webhook security, support access, privacy, production security review |
 
 The architectural and product decisions are recorded in [PLAN.md](PLAN.md), and [features.json](features.json) is a machine-readable map of the modules.
 
@@ -127,7 +127,7 @@ Global policy is read-only in the browser so production changes remain reviewabl
 
 ## Stripe setup
 
-For a complete walkthrough, see [Connect Stripe sandbox](docs/getting-started/06-connect-stripe-sandbox.md) and [Billing and subscriptions](docs/features/billing-and-subscriptions.md).
+For a complete walkthrough, see [Connect Stripe sandbox](https://react-templates.net/docs/next-saas/getting-started/connect-stripe-sandbox) and [Billing and subscriptions](https://react-templates.net/docs/next-saas/features/billing-and-subscriptions).
 
 1. Set `Stripe__SecretKey` to a Stripe sandbox key and restart the application.
 2. Sign in as an administrator, open `/admin/plans`, remain on the **Plans** tab, select a paid plan, and open its **Pricing** section.
@@ -158,7 +158,7 @@ Stripe-hosted invoice PDFs are the default. Add `ServiceStack.Pdf` only if the d
 
 ## Usage and quotas
 
-See [Usage and quotas](docs/concepts/usage-and-quotas.md) for the full model and [Add a meter and quota](docs/development/add-a-meter-and-quota.md) to add your own.
+See [Usage and quotas](https://react-templates.net/docs/next-saas/concepts/usage-and-quotas) for the full model and [Add a meter and quota](https://react-templates.net/docs/next-saas/development/add-a-meter-and-quota) to add your own.
 
 Record consumption using a ServiceStack Identity session or scoped API key:
 
@@ -181,7 +181,7 @@ Concurrent quota admission uses a conditional database update inside the same tr
 
 ## Developer workflow
 
-Step-by-step recipes are in the [development guides](docs/development/README.md). For production, follow the [operations runbooks](docs/operations/README.md) and the [production security review](docs/security/production-security-review.md).
+Step-by-step recipes are in the [development guides](https://react-templates.net/docs/next-saas/development). For production, follow the [operations runbooks](https://react-templates.net/docs/next-saas/operations) and the [production security review](https://react-templates.net/docs/next-saas/security/production-security-review).
 
 After changing C# request or response contracts, regenerate the browser client:
 

@@ -1,4 +1,3 @@
 # Entitlements
 
-The canonical plans and entitlements guide is now [docs/concepts/plans-and-entitlements.md](docs/concepts/plans-and-entitlements.md).
-
+The canonical plans and entitlements guide is now [published with the Next SaaS documentation](https://react-templates.net/docs/next-saas/concepts/plans-and-entitlements).
