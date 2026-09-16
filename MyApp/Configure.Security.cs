@@ -57,6 +57,11 @@ public class SecurityStartupFilter(
     AppConfig appConfig,
     IHostEnvironment environment) : IStartupFilter
 {
+    // Resolved once: the derivation is pure and the policy cannot change between requests.
+    private readonly string toolingPolicy = !string.IsNullOrWhiteSpace(config.ToolingContentSecurityPolicy)
+        ? config.ToolingContentSecurityPolicy
+        : WebSecurityPolicy.WithUnsafeEval(config.ContentSecurityPolicy);
+
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
     {
         app.Use(async (context, continuation) =>
@@ -71,8 +76,11 @@ public class SecurityStartupFilter(
                     headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
                     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
                     headers["Cross-Origin-Opener-Policy"] = "same-origin";
-                    if (!string.IsNullOrWhiteSpace(config.ContentSecurityPolicy))
-                        headers["Content-Security-Policy"] = config.ContentSecurityPolicy;
+                    var policy = WebSecurityPolicy.IsToolingPath(context.Request.Path, config.ToolingPaths)
+                        ? toolingPolicy
+                        : config.ContentSecurityPolicy;
+                    if (!string.IsNullOrWhiteSpace(policy))
+                        headers["Content-Security-Policy"] = policy;
                     return Task.CompletedTask;
                 });
             }
@@ -113,6 +121,43 @@ public static class WebSecurityPolicy
         "/identity/account/loginwithrecoverycode",
         "/saas/invitations/accept",
     };
+
+    /// <summary>
+    /// True when the request targets one of ServiceStack's built-in operator UIs, which need a
+    /// relaxed script-src. Uses segment matching so "/admin-uix" is not treated as "/admin-ui".
+    /// </summary>
+    public static bool IsToolingPath(PathString path, IEnumerable<string> toolingPaths)
+    {
+        foreach (var toolingPath in toolingPaths)
+        {
+            if (string.IsNullOrWhiteSpace(toolingPath)) continue;
+            if (path.StartsWithSegments(toolingPath, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Adds 'unsafe-eval' to the policy's script-src, leaving every other directive untouched.
+    /// A policy with no script-src gains one, because otherwise default-src would still block eval.
+    /// </summary>
+    public static string WithUnsafeEval(string policy)
+    {
+        if (string.IsNullOrWhiteSpace(policy)) return policy;
+
+        var directives = policy.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        for (var i = 0; i < directives.Count; i++)
+        {
+            var directive = directives[i];
+            var name = directive.Split(' ', 2)[0];
+            if (!name.Equals("script-src", StringComparison.OrdinalIgnoreCase)) continue;
+            if (directive.Contains("'unsafe-eval'", StringComparison.OrdinalIgnoreCase)) return policy;
+            directives[i] = directive + " 'unsafe-eval'";
+            return string.Join("; ", directives);
+        }
+
+        directives.Add("script-src 'self' 'unsafe-eval'");
+        return string.Join("; ", directives);
+    }
 
     public static bool IsSensitiveAuthenticationRequest(HttpRequest request) =>
         AspNetHttpMethods.IsPost(request.Method) && SensitiveAuthenticationPaths.Contains(request.Path.Value ?? "");

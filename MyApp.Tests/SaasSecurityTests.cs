@@ -431,6 +431,50 @@ public class SaasSecurityTests
         Assert.That(MyApp.WebSecurityPolicy.IsSensitiveAuthenticationRequest(context.Request), Is.False);
     }
 
+    [Test]
+    public void Operator_tooling_paths_receive_eval_only_where_the_built_in_UIs_need_it()
+    {
+        var config = new SecurityConfig();
+
+        foreach (var path in new[] { "/admin-ui", "/admin-ui/database", "/ui", "/ui/MyRequest", "/metadata" })
+            Assert.That(MyApp.WebSecurityPolicy.IsToolingPath(path, config.ToolingPaths), Is.True, path);
+
+        // Customer-facing routes, and near-misses that must not match by prefix alone.
+        foreach (var path in new[] { "/", "/pricing", "/admin", "/admin/plans", "/admin-uix", "/uixyz", "/saas/files" })
+            Assert.That(MyApp.WebSecurityPolicy.IsToolingPath(path, config.ToolingPaths), Is.False, path);
+    }
+
+    [Test]
+    public void Tooling_policy_adds_eval_to_script_src_and_leaves_other_directives_alone()
+    {
+        var relaxed = MyApp.WebSecurityPolicy.WithUnsafeEval(new SecurityConfig().ContentSecurityPolicy);
+
+        Assert.Multiple(() => {
+            Assert.That(relaxed, Does.Contain("script-src 'self' 'unsafe-inline' 'unsafe-eval'"));
+            // Everything that is not script-src must survive unchanged.
+            Assert.That(relaxed, Does.Contain("default-src 'self'"));
+            Assert.That(relaxed, Does.Contain("object-src 'none'"));
+            Assert.That(relaxed, Does.Contain("frame-ancestors 'none'"));
+            Assert.That(relaxed, Does.Contain("style-src 'self' 'unsafe-inline'"));
+            Assert.That(relaxed, Does.Not.Contain("style-src 'self' 'unsafe-inline' 'unsafe-eval'"));
+            Assert.That(relaxed, Does.Contain("connect-src 'self'"));
+            // The customer-facing policy itself must never gain eval.
+            Assert.That(new SecurityConfig().ContentSecurityPolicy, Does.Not.Contain("unsafe-eval"));
+        });
+    }
+
+    [Test]
+    public void Tooling_policy_derivation_is_idempotent_and_handles_a_missing_script_src()
+    {
+        var once = MyApp.WebSecurityPolicy.WithUnsafeEval("default-src 'self'; script-src 'self'");
+        Assert.That(once, Is.EqualTo("default-src 'self'; script-src 'self' 'unsafe-eval'"));
+        Assert.That(MyApp.WebSecurityPolicy.WithUnsafeEval(once), Is.EqualTo(once));
+
+        // Without a script-src, default-src would otherwise still block eval.
+        Assert.That(MyApp.WebSecurityPolicy.WithUnsafeEval("default-src 'self'"),
+            Is.EqualTo("default-src 'self'; script-src 'self' 'unsafe-eval'"));
+    }
+
     private static WorkspaceContext Context(WorkspaceMemberRole role) => new(
         new Workspace { Id = "organization-1", Name = "Acme", Slug = "acme" },
         new WorkspaceMember { Id = "member-1", WorkspaceId = "organization-1", UserId = "user-1", Role = role, Status = WorkspaceMemberStatus.Active },

@@ -35,6 +35,20 @@ public class SecurityConfig
         "form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; " +
         "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
         "connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'";
+
+    /// <summary>
+    /// ServiceStack's built-in operator UIs are Vue applications that compile templates at runtime
+    /// with new Function(), which CSP treats as eval. Only these paths receive the relaxed policy;
+    /// every customer-facing route keeps <see cref="ContentSecurityPolicy"/> unchanged.
+    /// </summary>
+    public List<string> ToolingPaths { get; set; } = ["/admin-ui", "/ui", "/metadata"];
+
+    /// <summary>
+    /// Policy served on <see cref="ToolingPaths"/>. Left empty it is derived from
+    /// <see cref="ContentSecurityPolicy"/> by adding 'unsafe-eval' to script-src, so the two
+    /// cannot drift apart. Set it explicitly to override that derivation.
+    /// </summary>
+    public string ToolingContentSecurityPolicy { get; set; } = "";
 }
 
 public record ProductionReadinessResult(List<string> Errors, List<string> Warnings)

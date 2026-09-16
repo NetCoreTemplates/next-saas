@@ -249,6 +249,8 @@ Plan metadata and customer overrides are RDBMS-managed. Changes that alter custo
 
 Keep webhook bodies out of request logs. Keep secrets and raw API keys out of logs and audit detail JSON.
 
+The Content Security Policy withholds `'unsafe-eval'` from customer-facing routes. ServiceStack's built-in operator UIs need it because they compile Vue templates at runtime, so `Security.ToolingPaths` scopes a derived relaxed policy to those paths. Never add `'unsafe-eval'` to `Security.ContentSecurityPolicy` itself.
+
 Cookie-authenticated mutations under `/saas` require a same-origin `Origin` or `Referer`; API-key calls are exempt from browser CSRF checks and remain credential-, membership-, feature-, quota-, and rate-limit protected. Sensitive authentication POST routes use the ASP.NET rate limiter. Keep both controls when adding authentication or customer mutation routes.
 
 Personal account deletion is separate from organization deletion. Owners must transfer or delete owned organizations first. Account deletion must revoke organization memberships, API keys, notifications, active support grants, and the active-workspace preference before removing Identity.
