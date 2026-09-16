@@ -29,10 +29,8 @@ public class StripeCatalogProvisioningTests
 
         var error = Assert.ThrowsAsync<HttpError>(() => gateway.ProvisionCatalogAsync(
             new SaasPlan { Id = "plan.pro", Code = "pro" },
-            new ProvisionSaasPlanStripeCatalog {
-                PlanId = "plan.pro", Name = "Pro", Description = "Pro plan",
-                Prices = [new SavePlanPrice { Currency = "usd", Interval = BillingInterval.Month, UnitAmount = 4900 }],
-            }));
+            "Pro", "Pro plan",
+            [new SavePlanPrice { Currency = "usd", Interval = BillingInterval.Month, UnitAmount = 4900 }]));
 
         Assert.That(error!.ErrorCode, Is.EqualTo("StripeLiveCatalogProvisioningDisabled"));
     }

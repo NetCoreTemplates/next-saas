@@ -112,15 +112,15 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         ? new StripeClient(config.SecretKey)
         : throw new HttpError(503, "StripeNotConfigured", "Set Stripe__SecretKey before using paid billing.");
 
-    public async Task<ProvisionSaasPlanStripeCatalogResponse> ProvisionCatalogAsync(SaasPlan plan,
-        ProvisionSaasPlanStripeCatalog request, CancellationToken token = default)
+    public async Task<ProvisionSaasPlanStripeCatalogResponse> ProvisionCatalogAsync(SaasPlan plan, string name,
+        string description, IReadOnlyCollection<SavePlanPrice> prices, CancellationToken token = default)
     {
         if (!config.EnableCatalogProvisioning)
             throw new HttpError(409, "StripeCatalogProvisioningDisabled", "Enable Stripe.EnableCatalogProvisioning before creating catalog objects.");
         if (IsLiveMode && !config.AllowLiveCatalogProvisioning)
             throw new HttpError(409, "StripeLiveCatalogProvisioningDisabled", "Automatic live Stripe catalog creation is disabled. Enable Stripe.AllowLiveCatalogProvisioning explicitly to proceed.");
 
-        var missing = request.Prices
+        var missing = prices
             .Where(x => x.IsActive && x.UnitAmount > 0 && x.StripePriceId.IsNullOrEmpty())
             .ToList();
         var managedMetadata = new Dictionary<string, string> {
@@ -144,12 +144,12 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         if (stripeProduct == null)
         {
             var organization = productConfig.OrganizationName.Trim();
-            var name = request.Name.Trim();
-            if (!organization.IsNullOrEmpty() && !name.StartsWith(organization + " ", StringComparison.OrdinalIgnoreCase))
-                name = $"{organization} {name}";
+            var productName = name.Trim();
+            if (!organization.IsNullOrEmpty() && !productName.StartsWith(organization + " ", StringComparison.OrdinalIgnoreCase))
+                productName = $"{organization} {productName}";
             stripeProduct = await productService.CreateAsync(new ProductCreateOptions {
-                Name = name,
-                Description = request.Description.Trim(),
+                Name = productName,
+                Description = description.Trim(),
                 Metadata = managedMetadata,
             }, new RequestOptions { IdempotencyKey = $"next-saas-product-{plan.Id}" }, token);
         }
@@ -182,7 +182,7 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
                     Currency = currency,
                     UnitAmount = price.UnitAmount,
                     Recurring = new PriceRecurringOptions { Interval = interval },
-                    Nickname = $"{request.Name.Trim()} {interval}ly",
+                    Nickname = $"{name.Trim()} {interval}ly",
                     Metadata = metadata,
                 }, new RequestOptions {
                     IdempotencyKey = $"next-saas-price-{plan.Id}-{currency}-{interval}-{price.UnitAmount}",

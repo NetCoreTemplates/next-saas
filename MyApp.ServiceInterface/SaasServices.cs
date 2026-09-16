@@ -41,7 +41,8 @@ public interface IStripeBillingGateway
     Task<List<SaasCouponInfo>> GetCouponsAsync(CancellationToken token = default);
     Task<SaasCouponInfo> CreateCouponAsync(CreateSaasCoupon request, CancellationToken token = default);
     Task<SaasCouponInfo> DeactivateCouponAsync(string promotionCodeId, CancellationToken token = default);
-    Task<ProvisionSaasPlanStripeCatalogResponse> ProvisionCatalogAsync(SaasPlan plan, ProvisionSaasPlanStripeCatalog request, CancellationToken token = default);
+    Task<ProvisionSaasPlanStripeCatalogResponse> ProvisionCatalogAsync(SaasPlan plan, string name, string description,
+        IReadOnlyCollection<SavePlanPrice> prices, CancellationToken token = default);
     Task<string> CreateCheckoutAsync(Workspace workspace, SaasPlanPrice price, string successUrl, string cancelUrl, int? trialDays, CancellationToken token = default);
     Task<bool> ConfirmCheckoutAsync(IDbConnection db, Workspace workspace, string? sessionId, CancellationToken token = default);
     Task<string> CreatePortalAsync(Workspace workspace, string returnUrl, CancellationToken token = default);
@@ -64,6 +65,7 @@ public interface ISaasManager
     UsageSummary AdjustGauge(IDbConnection db, Workspace workspace, BillingSubscription subscription, string userId, string meterKey, long delta, string idempotencyKey, string source);
     SaasPlanDetails GetPlanDetails(IDbConnection db, string planId);
     SaasPlanDetails SavePlanDraft(IDbConnection db, string actorId, SaveSaasPlanDraft request);
+    SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string actorId, string planId, ProvisionSaasPlanStripeCatalogResponse result);
     SaasPlanDetails PublishPlanDraft(IDbConnection db, string actorId, string planId);
 }
 
@@ -674,6 +676,44 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         tx.Commit();
         }
         return GetPlanDetails(db, plan.Id);
+    }
+
+    public SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string actorId, string planId,
+        ProvisionSaasPlanStripeCatalogResponse result)
+    {
+        var draft = db.Select<SaasPlanVersion>(x => x.PlanId == planId && x.Status == PlanVersionStatus.Draft)
+            .OrderByDescending(x => x.Version).FirstOrDefault()
+            ?? throw new HttpError(409, "PlanDraftNotFound", "Save a draft before provisioning its Stripe catalog.");
+        var prices = db.Select<SaasPlanPrice>(x => x.PlanVersionId == draft.Id);
+        var now = DateTime.UtcNow;
+
+        using (var tx = db.OpenTransaction())
+        {
+            foreach (var mapping in result.Prices)
+            {
+                var matches = prices.Where(x =>
+                    x.Currency.Equals(mapping.Currency, StringComparison.OrdinalIgnoreCase) &&
+                    x.Interval == mapping.Interval && x.UnitAmount == mapping.UnitAmount).ToList();
+                if (matches.Count != 1)
+                    throw new HttpError(409, "DraftPriceNotFound", "The provisioned Stripe price no longer matches this draft. Review the draft and try again.");
+                var price = matches[0];
+                if (!price.StripePriceId.IsNullOrEmpty() && price.StripePriceId != mapping.StripePriceId)
+                    throw new HttpError(409, "DraftPriceMappingChanged", "The draft price mapping changed while Stripe provisioning was running.");
+                price.StripePriceId = mapping.StripePriceId;
+                price.ModifiedDate = now;
+                price.ModifiedBy = actorId;
+                db.Update(price);
+            }
+            db.Insert(new SaasAuditEvent {
+                Category = "stripe", Action = "catalog.provisioned", ActorId = actorId,
+                SubjectId = planId,
+                DetailJson = new { result.StripeProductId, result.Livemode, result.ProductCreated,
+                    PricesCreated = result.Prices.Count(x => x.Created), PricesReused = result.Prices.Count(x => !x.Created) }.ToJson(),
+                CreatedDate = now,
+            });
+            tx.Commit();
+        }
+        return GetPlanDetails(db, planId);
     }
 
     private void ValidatePlanDraft(SaveSaasPlanDraft request)
@@ -1341,10 +1381,16 @@ public class SaasServices(
     public async Task<object> Any(ProvisionSaasPlanStripeCatalog request)
     {
         var session = await GetSessionAsync();
-        request.Prices ??= [];
         var plan = Db.SingleById<SaasPlan>(request.PlanId)
             ?? throw new HttpError(404, "PlanNotFound", "The selected plan was not found.");
-        var candidates = request.Prices.Where(x => x.IsActive && x.UnitAmount > 0 && x.StripePriceId.IsNullOrEmpty()).ToList();
+        var draft = manager.GetPlanDetails(Db, plan.Id);
+        if (!draft.HasDraft)
+            throw new HttpError(409, "PlanDraftNotFound", "Save a draft before provisioning its Stripe catalog.");
+        var prices = draft.Prices.Select(x => new SavePlanPrice {
+            Currency = x.Currency, Interval = x.Interval, UnitAmount = x.UnitAmount,
+            StripePriceId = x.StripePriceId, IsActive = x.IsActive,
+        }).ToList();
+        var candidates = prices.Where(x => x.IsActive && x.UnitAmount > 0 && x.StripePriceId.IsNullOrEmpty()).ToList();
         if (candidates.Count == 0)
             throw new HttpError(409, "StripePricesAlreadyMapped", "This plan has no unmapped positive prices to create in Stripe.");
         if (candidates.Any(x => x.Currency.IsNullOrEmpty() || x.Currency.Trim().Length != 3 || !x.Currency.Trim().All(char.IsLetter)))
@@ -1352,14 +1398,8 @@ public class SaasServices(
         if (candidates.GroupBy(x => $"{x.Currency.Trim().ToLowerInvariant()}:{x.Interval}").Any(x => x.Count() > 1))
             throw new HttpError(409, "DuplicateStripePrice", "Only one active price can be provisioned for each currency and billing interval.");
 
-        var result = await stripe.ProvisionCatalogAsync(plan, request);
-        Db.Insert(new SaasAuditEvent {
-            Category = "stripe", Action = "catalog.provisioned", ActorId = session.UserAuthId!,
-            SubjectId = plan.Id,
-            DetailJson = new { result.StripeProductId, result.Livemode, result.ProductCreated,
-                PricesCreated = result.Prices.Count(x => x.Created), PricesReused = result.Prices.Count(x => !x.Created) }.ToJson(),
-            CreatedDate = DateTime.UtcNow,
-        });
+        var result = await stripe.ProvisionCatalogAsync(plan, draft.Plan.Name, draft.Plan.Description, prices);
+        result.Draft = manager.SaveStripeCatalogProvisioning(Db, session.UserAuthId!, plan.Id, result);
         return result;
     }
 

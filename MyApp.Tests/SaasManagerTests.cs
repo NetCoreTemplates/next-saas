@@ -105,7 +105,7 @@ public class SaasManagerTests
         var draft = manager.SavePlanDraft(db, "admin-1", new SaveSaasPlanDraft {
             PlanId = "plan.pro", Name = "Pro Scale", Description = "Updated plan", DisplayOrder = 2, IsPublic = true,
             TrialDays = 21,
-            Prices = [new SavePlanPrice { Currency = "USD", Interval = BillingInterval.Month, UnitAmount = 5_900, StripePriceId = "price_month_v2" }],
+            Prices = [new SavePlanPrice { Currency = "USD", Interval = BillingInterval.Month, UnitAmount = 5_900 }],
             Features = [new SavePlanFeature { Key = "analytics.advanced", Name = "Advanced analytics" }],
             Quotas = [new SavePlanQuota { MeterKey = "api.requests", DisplayName = "API requests", IncludedUnits = 75_000, Enforcement = QuotaEnforcement.HardLimit }],
         });
@@ -120,6 +120,20 @@ public class SaasManagerTests
             Assert.That(db.SingleById<SaasPlan>("plan.pro")!.Name, Is.EqualTo("Pro"));
             Assert.That(db.SingleById<SaasPlanPrice>("price.pro.month")!.UnitAmount, Is.EqualTo(4_900));
             Assert.That(db.SingleById<BillingSubscription>("subscription-1")!.PlanVersionId, Is.EqualTo("plan.pro.v1"));
+        });
+
+        var provisioned = manager.SaveStripeCatalogProvisioning(db, "admin-1", "plan.pro",
+            new ProvisionSaasPlanStripeCatalogResponse {
+                StripeProductId = "prod_pro",
+                Prices = [new StripeCatalogPriceMapping {
+                    Currency = "usd", Interval = BillingInterval.Month, UnitAmount = 5_900,
+                    StripePriceId = "price_month_v2", Created = true,
+                }],
+            });
+        Assert.Multiple(() => {
+            Assert.That(provisioned.HasDraft, Is.True);
+            Assert.That(provisioned.Prices.Single().StripePriceId, Is.EqualTo("price_month_v2"));
+            Assert.That(db.Count<SaasAuditEvent>(x => x.Category == "stripe" && x.Action == "catalog.provisioned"), Is.EqualTo(1));
         });
 
         var published = manager.PublishPlanDraft(db, "admin-1", "plan.pro");

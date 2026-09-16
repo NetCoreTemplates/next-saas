@@ -1,5 +1,5 @@
 /* Options:
-Date: 2026-09-14 11:56:32
+Date: 2026-09-16 15:21:31
 Version: 10.21
 Tip: To override a DTO option, remove "//" prefix before updating
 BaseUrl: http://127.0.0.1:5005
@@ -1284,6 +1284,7 @@ export class ProvisionSaasPlanStripeCatalogResponse
     public livemode: boolean;
     public productCreated: boolean;
     public prices: StripeCatalogPriceMapping[] = [];
+    public draft: SaasPlanDetails;
     public responseStatus?: ResponseStatus;
 
     public constructor(init?: Partial<ProvisionSaasPlanStripeCatalogResponse>) { (Object as any).assign(this, init); }
@@ -2288,14 +2289,6 @@ export class ProvisionSaasPlanStripeCatalog implements IReturn<ProvisionSaasPlan
 {
     // @Validate(Validator="NotEmpty")
     public planId: string;
-
-    // @Validate(Validator="NotEmpty")
-    public name: string;
-
-    // @Validate(Validator="NotEmpty")
-    public description: string;
-
-    public prices: SavePlanPrice[] = [];
 
     public constructor(init?: Partial<ProvisionSaasPlanStripeCatalog>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'ProvisionSaasPlanStripeCatalog'; }

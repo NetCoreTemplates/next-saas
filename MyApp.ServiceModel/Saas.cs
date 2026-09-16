@@ -593,6 +593,7 @@ public class ProvisionSaasPlanStripeCatalogResponse
     public bool Livemode { get; set; }
     public bool ProductCreated { get; set; }
     public List<StripeCatalogPriceMapping> Prices { get; set; } = [];
+    public SaasPlanDetails Draft { get; set; } = new();
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
@@ -601,9 +602,6 @@ public class ProvisionSaasPlanStripeCatalogResponse
 public class ProvisionSaasPlanStripeCatalog : IPost, IReturn<ProvisionSaasPlanStripeCatalogResponse>
 {
     [ValidateNotEmpty] public string PlanId { get; set; } = "";
-    [ValidateNotEmpty] public string Name { get; set; } = "";
-    [ValidateNotEmpty] public string Description { get; set; } = "";
-    public List<SavePlanPrice> Prices { get; set; } = [];
 }
 
 public class SavePlanFeature

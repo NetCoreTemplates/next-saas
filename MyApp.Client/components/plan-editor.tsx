@@ -242,30 +242,19 @@ export function PlanEditor({ plans, versions, trialsEnabled, trialRequiresPaymen
     setNotice(undefined)
     const api = await client.api(new ProvisionSaasPlanStripeCatalog({
       planId: details.plan.id,
-      name: editor.name,
-      description: editor.description,
-      prices: editor.prices.map(x => new SavePlanPrice({
-        currency: x.currency,
-        interval: x.interval,
-        unitAmount: Number(x.unitAmount),
-        stripePriceId: x.stripePriceId || undefined,
-        isActive: x.isActive,
-      })),
     }))
     if (api.succeeded && api.response) {
       const mappings = api.response.prices ?? []
-      setEditor(current => current ? {
-        ...current,
-        prices: current.prices.map(row => {
-          const mapping = mappings.find(x => x.currency?.toLowerCase() === row.currency.toLowerCase() &&
-            x.interval === row.interval && x.unitAmount === Number(row.unitAmount))
-          return mapping ? { ...row, stripePriceId: mapping.stripePriceId ?? '' } : row
-        }),
-      } : current)
-      setDirty(true)
+      setDetails(api.response.draft)
+      setEditor(toEditor(api.response.draft, defaultTrialDays))
+      setDirty(false)
+      if (api.response.draft.version) {
+        const savedVersion = api.response.draft.version
+        setCatalogVersions(current => [...current.filter(x => x.id !== savedVersion.id), savedVersion])
+      }
       const created = mappings.filter(x => x.created).length
       const reused = mappings.length - created
-      setNotice({ tone: 'success', text: `${api.response.productCreated ? 'Created' : 'Reused'} Stripe product ${api.response.stripeProductId}; ${created} price${created === 1 ? '' : 's'} created${reused ? ` and ${reused} reused` : ''}. Save the draft, then publish it to enable Checkout.` })
+      setNotice({ tone: 'success', text: `${api.response.productCreated ? 'Created' : 'Reused'} Stripe product ${api.response.stripeProductId}; ${created} price${created === 1 ? '' : 's'} created${reused ? ` and ${reused} reused` : ''}. The mappings were saved to the draft; publish it to enable Checkout.` })
     } else {
       setNotice({ tone: 'error', text: api.error?.message ?? 'Unable to provision this plan in Stripe.' })
     }
