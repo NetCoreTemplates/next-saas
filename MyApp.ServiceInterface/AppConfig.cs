@@ -12,7 +12,11 @@ public class DeploymentConfig
 {
     public bool EnforceStartupChecks { get; set; } = true;
     public bool RequireHttps { get; set; } = true;
-    public bool RequirePostgreSql { get; set; } = true;
+    /// <summary>
+    /// Requires a networked database server (any provider other than Sqlite), so the
+    /// deployment can run more than one application instance and back up independently.
+    /// </summary>
+    public bool RequireNetworkDatabase { get; set; } = true;
     public bool RequireSmtp { get; set; } = true;
     public bool RequireStripe { get; set; } = true;
     public bool RequireStripeWebhook { get; set; } = true;
@@ -58,11 +62,11 @@ public static class ProductionReadiness
             errors.Add("AllowedHosts must be restricted to the deployed hostname in production.");
         if (product.SupportEmail.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase) || !product.SupportEmail.Contains('@'))
             errors.Add("Product.SupportEmail must be a real monitored address.");
-        if (deployment.RequirePostgreSql && !values.GetValue("Database:Provider", "Sqlite").StartsWith("Postgres", StringComparison.OrdinalIgnoreCase))
-            errors.Add("Database.Provider must be PostgreSql for production, or Deployment.RequirePostgreSql must be explicitly disabled.");
+        if (deployment.RequireNetworkDatabase && values.GetValue("Database:Provider", "Sqlite").Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+            errors.Add("Database.Provider must be a networked database server in production, or Deployment.RequireNetworkDatabase must be explicitly disabled.");
         var connection = values.GetConnectionString("DefaultConnection");
-        if (deployment.RequirePostgreSql && string.IsNullOrEmpty(connection))
-            errors.Add("ConnectionStrings.DefaultConnection is required for PostgreSQL.");
+        if (deployment.RequireNetworkDatabase && string.IsNullOrEmpty(connection))
+            errors.Add("ConnectionStrings.DefaultConnection is required for a networked database server.");
         if (deployment.RequireExplicitMigrations && values.GetValue("Database:AutoMigrateEmpty", true))
             errors.Add("Database.AutoMigrateEmpty must be false in production; run the migrate app task during deployment.");
         if (deployment.RequireSmtp && notifications.Provider != EmailProvider.Smtp)

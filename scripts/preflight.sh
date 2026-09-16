@@ -49,20 +49,19 @@ if [[ "$BASE_URL" == *localhost* || "$BASE_URL" == *example.com* ]]; then fail "
 ALLOWED="${AllowedHosts:-}"
 if [[ -n "$ALLOWED" && "$ALLOWED" != "*" ]]; then pass "AllowedHosts is restricted"; else fail "AllowedHosts must be set to the deployed hostname"; fi
 
-if enabled "${Deployment__RequirePostgreSql:-true}"; then
-  if [[ "${Database__Provider:-}" == "PostgreSql" || "${Database__Provider:-}" == "Postgres" ]]; then
-    pass "PostgreSQL is selected"
+if enabled "${Deployment__RequireNetworkDatabase:-true}"; then
+  if [[ "${Database__Provider:-}" == "Sqlite" || -z "${Database__Provider:-}" ]]; then
+    fail "Database__Provider must be a networked database server for the default production policy"
   else
-    fail "Database__Provider must be PostgreSql for the default production policy"
+    pass "networked database provider ${Database__Provider} is selected"
   fi
-  required ConnectionStrings__DefaultConnection "PostgreSQL connection string"
+  required ConnectionStrings__DefaultConnection "database connection string"
 else
+  required ConnectionStrings__DefaultConnection "database connection string"
   if [[ "${Database__Provider:-}" == "Sqlite" ]]; then
-    required ConnectionStrings__DefaultConnection "SQLite connection string"
     warn "SQLite is explicitly allowed; use one application instance and preserve App_Data"
   else
-    pass "the non-PostgreSQL database policy is explicitly allowed"
-    required ConnectionStrings__DefaultConnection "database connection string"
+    pass "the relaxed database policy is explicitly allowed"
   fi
 fi
 

@@ -25,7 +25,7 @@ public class SaasSecurityTests
             Assert.That(result.IsReady, Is.False);
             Assert.That(result.Errors, Has.Some.Contains("HTTPS"));
             Assert.That(result.Errors, Has.Some.Contains("AllowedHosts"));
-            Assert.That(result.Errors, Has.Some.Contains("PostgreSql"));
+            Assert.That(result.Errors, Has.Some.Contains("networked database server"));
             Assert.That(result.Errors, Has.Some.Contains("Smtp"));
             Assert.That(result.Errors, Has.Some.Contains("Stripe"));
         });

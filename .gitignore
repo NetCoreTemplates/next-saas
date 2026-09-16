@@ -20,9 +20,10 @@ obj/
 *.db-wal
 *.db-journal
 *.sqlite
-*.sqlite
 *.sqlite-shm
 *.sqlite-wal
+# Kamal destination files are configuration, not SQLite databases.
+!.kamal/secrets.sqlite
 Configure.secrets.cs
 appsettings.Production.*
 

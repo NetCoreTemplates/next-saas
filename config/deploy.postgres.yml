@@ -1,0 +1,29 @@
+# PostgreSQL destination overlay: kamal deploy -d postgres
+#
+# Deep-merged over config/deploy.yml. Requires these GitHub Action Secrets, which
+# .kamal/secrets.postgres reads from the environment:
+#
+# - POSTGRES_PASSWORD (e.g. random-password)      - PostgreSQL superuser
+# - NEXT_SAAS_DB_PASSWORD (e.g. random-password)  - unprivileged application login
+#
+# Note that Kamal deep-merges with array replacement, so any list redefined here
+# replaces the base list rather than appending to it.
+
+accessories:
+  postgres:
+    service: <%= ENV['SERVICE'] %>-postgres
+    image: postgres:18-alpine
+    host: <%= ENV['KAMAL_DEPLOY_IP'] %>
+    env:
+      clear:
+        POSTGRES_USER: postgres
+        POSTGRES_DB: postgres
+      secret:
+        - POSTGRES_PASSWORD
+        - NEXT_SAAS_DB_PASSWORD
+    files:
+      - config/db/postgres/init.sh:/docker-entrypoint-initdb.d/10-next-saas.sh
+    volumes:
+      # PostgreSQL 18 stores its cluster below the versioned /var/lib/postgresql/18/docker
+      # directory, so the persistent mount is /var/lib/postgresql, not .../data.
+      - /opt/docker/<%= ENV['SERVICE'] %>/postgres-18:/var/lib/postgresql

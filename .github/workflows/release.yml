@@ -20,6 +20,14 @@ env:
   KAMAL_DEPLOY_HOST: ${{ secrets.KAMAL_DEPLOY_HOST }}
   KAMAL_REGISTRY_USERNAME: ${{ github.actor }}
   KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+  # Database provider, selected by the DB_PROVIDER repository variable (Settings > Secrets
+  # and variables > Actions > Variables). Resolves a Kamal destination: config/deploy.<provider>.yml
+  # is merged over config/deploy.yml, secrets come from .kamal/secrets-common plus
+  # .kamal/secrets.<provider>, and config/db/<provider>/pre-deploy.sh runs before deploy.
+  DB_PROVIDER: ${{ vars.DB_PROVIDER || 'sqlite' }}
+  # Only consumed by the postgres provider; harmlessly empty for every other provider.
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  NEXT_SAAS_DB_PASSWORD: ${{ secrets.NEXT_SAAS_DB_PASSWORD }}
 
 jobs:
   release:
@@ -76,33 +84,52 @@ jobs:
         with:
           driver-opts: image=moby/buildkit:master
 
+      - name: Verify database provider
+        run: |
+          if [ ! -f "config/deploy.$DB_PROVIDER.yml" ]; then
+            echo "Unknown DB_PROVIDER '$DB_PROVIDER': config/deploy.$DB_PROVIDER.yml does not exist." >&2
+            echo "Available providers:" >&2
+            ls config/deploy.*.yml | sed 's|config/deploy\.\(.*\)\.yml|  \1|' >&2
+            exit 1
+          fi
+          echo "Deploying with database provider '$DB_PROVIDER'"
+
       - name: Kamal bootstrap
         run: |
-          kamal server bootstrap
+          kamal server bootstrap -d "$DB_PROVIDER"
+
+      - name: Database provider pre-deploy hook
+        run: |
+          hook="config/db/$DB_PROVIDER/pre-deploy.sh"
+          if [ -x "$hook" ]; then
+            "$hook"
+          else
+            echo "No pre-deploy hook for '$DB_PROVIDER'; nothing to provision"
+          fi
 
       - name: Ensure directories exist with correct permissions
         run: |
           echo "Creating directories with correct permissions"
-          kamal server exec "mkdir -p /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
+          kamal server exec -d "$DB_PROVIDER" "mkdir -p /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
 
           echo "Setting app file permissions"
-          kamal server exec "chown -R 1654:1654 /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
+          kamal server exec -d "$DB_PROVIDER" "chown -R 1654:1654 /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
 
       - name: Verify file permissions before deploy
         run: |
-          kamal server exec --no-interactive "chown -R 1654:1654 /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
+          kamal server exec --no-interactive -d "$DB_PROVIDER" "chown -R 1654:1654 /opt/docker/${{ env.SERVICE }}/App_Data /opt/docker/${{ env.SERVICE }}/initdb.d"
 
       - name: Deploy with Kamal
         run: |
-          kamal lock release -v
-          kamal server exec --no-interactive 'echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin'
-          kamal server exec --no-interactive 'docker pull ${{ env.IMAGE }}:${{ env.VERSION }}'
-          kamal deploy -P --version "${{ env.VERSION }}"
+          kamal lock release -v -d "$DB_PROVIDER"
+          kamal server exec --no-interactive -d "$DB_PROVIDER" 'echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin'
+          kamal server exec --no-interactive -d "$DB_PROVIDER" 'docker pull ${{ env.IMAGE }}:${{ env.VERSION }}'
+          kamal deploy -P -d "$DB_PROVIDER" --version "${{ env.VERSION }}"
 
       - name: Migration
         if: env.HAS_MIGRATIONS == 'true'
         run: |
-          kamal app exec --no-reuse --no-interactive --version="${{ env.VERSION }}" "--AppTasks=migrate"
+          kamal app exec --no-reuse --no-interactive -d "$DB_PROVIDER" --version="${{ env.VERSION }}" "--AppTasks=migrate"
 
       - name: Verify production readiness
         run: curl --fail --show-error --silent --retry 12 --retry-delay 5 "https://${{ env.KAMAL_DEPLOY_HOST }}/ready"

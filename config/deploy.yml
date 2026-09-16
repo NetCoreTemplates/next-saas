@@ -7,10 +7,19 @@
 # - KAMAL_REGISTRY_PASSWORD ($GITHUB_TOKEN)   - from GitHub Action ${secrets.GITHUB_TOKEN}
 # - KAMAL_DEPLOY_IP (e.g. 100.100.100.100)    - from GitHub Action Secret
 # - KAMAL_DEPLOY_HOST (e.g. example.org)      - from GitHub Action Secret
-# - POSTGRES_PASSWORD (e.g. random-password)  - from GitHub Action Secret
 #
 # Using environment variables keeps this configuration reusable across multiple apps.
 # For a simpler app-specific setup (without needing .env), they can be replaced with hard-coded values.
+#
+# This is the provider-agnostic base configuration. The database is selected with a Kamal
+# destination, which deep-merges config/deploy.<provider>.yml over this file and reads its
+# secrets from .kamal/secrets-common plus .kamal/secrets.<provider>:
+#
+#     kamal deploy -d sqlite      # default, no database accessory
+#     kamal deploy -d postgres    # boots a private PostgreSQL accessory
+#
+# The Release workflow passes -d "$DB_PROVIDER" to every kamal command. Set the DB_PROVIDER
+# repository variable to change providers. Do not add database accessories to this file.
 
 # Name of your application. Used to uniquely configure containers. (e.g. example-org)
 service: <%= ENV['SERVICE'] %>
@@ -23,7 +32,7 @@ env:
   clear:
     ASPNETCORE_ENVIRONMENT: Production
     ASPNETCORE_FORWARDEDHEADERS_ENABLED: true
-  # secrets from ./kamal/secrets
+  # secrets from .kamal/secrets-common and .kamal/secrets.<destination>
   secret:
     - SERVICESTACK_LICENSE
     - APPSETTINGS_JSON_BASE64
@@ -54,7 +63,7 @@ registry:
   username:
     - KAMAL_REGISTRY_USERNAME
 
-  # Always use an access token rather than real password (pulled from .kamal/secrets).
+  # Always use an access token rather than real password (pulled from .kamal/secrets-common).
   password:
     - KAMAL_REGISTRY_PASSWORD
 
@@ -65,7 +74,9 @@ builder:
 volumes:
   - "/opt/docker/<%= ENV['SERVICE'] %>/App_Data:/app/App_Data"
 
-#accessories:
+# Database accessories are declared per destination in config/deploy.<provider>.yml.
+#
+# Additional (non-database) accessory example:
 #  litestream:
 #    roles: ["web"]
 #    image: litestream/litestream

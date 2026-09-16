@@ -1,0 +1,17 @@
+# SQLite destination overlay: kamal deploy -d sqlite
+#
+# Deep-merged over config/deploy.yml. SQLite needs no accessory and no extra secrets;
+# it stores the database file in the App_Data volume already declared by the base config.
+#
+# Kamal requires the destination config file to exist AND to parse as a YAML mapping:
+# a comment-only file loads as `false` and fails with "undefined method 'symbolize_keys'".
+# The empty accessories mapping below is both valid and accurate for this provider.
+# Constraints of this provider:
+#
+# - run exactly one application instance (no horizontal scaling);
+# - keep /opt/docker/<service>/App_Data on durable storage;
+# - back up App_Data, since the database has no separate server to replicate from.
+#
+# See config/deploy.postgres.yml for the shape a networked provider takes.
+
+accessories: {}

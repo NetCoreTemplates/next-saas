@@ -26,12 +26,39 @@ Use **Organization** in all customer-facing UI and copy. The internal domain, da
 8. Never put Stripe secret or webhook keys in browser code.
 9. Published plan versions are immutable. Create a draft version for changes.
 10. Customer deletion or payment failure never deletes product data; it changes access policy.
+11. The database provider is a configuration choice, never a code fork. SQLite is the default.
+
+## Database providers
+
+`MyApp/Configure.Db.cs` branches on `Database:Provider` for both OrmLite and EF Core, so the
+application itself is provider-agnostic. Deployment selects a provider with a Kamal destination:
+`config/deploy.<provider>.yml` deep-merges over `config/deploy.yml`, secrets resolve from
+`.kamal/secrets-common` plus `.kamal/secrets.<provider>`, and `config/db/<provider>/pre-deploy.sh`
+provisions any accessory. The Release workflow passes `-d "$DB_PROVIDER"` to every `kamal`
+command, where `DB_PROVIDER` is a repository variable defaulting to `sqlite`.
+
+When adding a provider, add all of its files rather than branching the pipeline:
+
+- do not add database accessories to `config/deploy.yml`, and do not add provider credentials to
+  `.kamal/secrets-common`;
+- do not add provider-specific steps to `.github/workflows/release.yml`; use the pre-deploy hook;
+- every Kamal invocation in the workflow must carry `-d "$DB_PROVIDER"`, because a destination
+  also selects the secrets file;
+- a destination scopes container names (`<service>-web-<destination>-<version>`) and the
+  `destination=` label that every Kamal removal filters on, so commands run under one destination
+  cannot see deployments made under another, or under none;
+- Kamal requires `config/deploy.<provider>.yml` to exist for any destination it is given and to
+  parse as a YAML mapping — a comments-only file loads as `false` and raises `symbolize_keys` —
+  and its deep merge replaces arrays rather than appending to them;
+- `Deployment.RequireNetworkDatabase` is the production policy gate; it rejects Sqlite for any
+  provider rather than naming one.
 
 ## Configuration ownership
 
 Keep configuration in the correct scope:
 
 - deployment-wide behavior belongs under `Saas` or `Stripe` in `MyApp/appsettings.json` and environment overrides;
+- the database provider belongs in `Database:Provider` plus a Kamal destination (see below);
 - plan versions, features, quota amounts, display order, and Stripe Price mappings belong in the RDBMS;
 - customer-specific exceptions belong in `CustomerEntitlementOverride` with actor, reason, and validity window.
 

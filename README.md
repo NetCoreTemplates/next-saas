@@ -121,7 +121,7 @@ export Stripe__SecretKey=sk_test_...
 export Stripe__WebhookSecret=whsec_...
 ```
 
-Production startup is intentionally fail-closed. `Deployment` policy checks reject placeholder URLs and support addresses, wildcard hosts, SQLite, development email delivery, automatic first-request migration, missing Stripe/webhook credentials, and test Stripe keys. Each requirement is configurable for staging or an intentionally free-only product, but weakening one requires an explicit setting. Development startup is unaffected.
+Production startup is intentionally fail-closed. `Deployment` policy checks reject placeholder URLs and support addresses, wildcard hosts, a file-based database, development email delivery, automatic first-request migration, missing Stripe/webhook credentials, and test Stripe keys. Each requirement is configurable for staging or an intentionally free-only product, but weakening one requires an explicit setting. Development startup is unaffected.
 
 Global policy is read-only in the browser so production changes remain reviewable. The `/admin` Operations Center groups customer, plan, usage, operational, security, and settings workflows into static routes, with low-level data access available to authorized operators at `/admin-ui/database`.
 
@@ -132,7 +132,7 @@ For a complete walkthrough, see [Connect Stripe sandbox](https://react-templates
 1. Set `Stripe__SecretKey` to a Stripe sandbox key and restart the application.
 2. Sign in as an administrator, open `/admin/plans`, remain on the **Plans** tab, select a paid plan, and open its **Pricing** section.
 3. Click **Create missing in Stripe** to create or reuse the plan's Stripe Product and recurring Prices. The returned `price_...` mappings are filled into the draft automatically.
-4. Save the draft and publish it. Repeat for each self-serve paid plan. Zero-cost and contact-sales plans are intentionally skipped.
+4. Publish the updated draft. Repeat for each self-serve paid plan. Zero-cost and contact-sales plans are intentionally skipped.
 5. Configure a Stripe Customer Portal configuration if you need a non-default portal.
 6. Register `POST https://your-domain.example/stripe/webhook` for Checkout, subscription, and failed-payment events.
 7. Set the webhook signing secret as `Stripe__WebhookSecret`.
@@ -211,6 +211,29 @@ Use `./scripts/preflight.sh --config-only` when build artifacts have already pas
 cd MyApp
 dotnet run --no-launch-profile --AppTasks=migrate
 ```
+
+### Choosing a database
+
+SQLite is the default so a first deployment needs no external service. The deployment layer
+selects a provider with a Kamal destination: `config/deploy.<provider>.yml` is merged over
+`config/deploy.yml`, secrets come from `.kamal/secrets-common` plus `.kamal/secrets.<provider>`,
+and `config/db/<provider>/pre-deploy.sh` provisions any accessory. The Release workflow reads the
+`DB_PROVIDER` repository variable (default `sqlite`) and passes `-d "$DB_PROVIDER"` to every
+`kamal` command, so switching providers changes one variable rather than the pipeline:
+
+```bash
+./scripts/configure-deployment.sh \
+  --provider postgres \
+  --service my-app \
+  --repo owner/my-app \
+  --set-github-secrets
+```
+
+See [Choose a database](https://react-templates.net/docs/next-saas/operations/choose-a-database)
+and [config/README.md](config/README.md) for the full matrix and for adding another provider.
+`scripts/reset-kamal-deployment.sh` previews the exact service scope — containers, images,
+accessories, app directories, and persistent state — before an explicit `--yes` reset. It clears
+every provider's accessory, not just the selected one, so a provider switch leaves a clean slate.
 
 Or run individual commands:
 
