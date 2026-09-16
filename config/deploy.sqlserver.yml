@@ -1,0 +1,31 @@
+# SQL Server destination overlay: kamal deploy -d sqlserver
+#
+# Deep-merged over config/deploy.yml. Requires one GitHub Action Secret, which
+# .kamal/secrets.sqlserver reads from the environment and maps to both accounts:
+#
+# - DB_PASSWORD (e.g. random-password)  - application login, and the sa account
+#
+# SQL Server enforces password complexity: at least eight characters drawn from three
+# of uppercase, lowercase, digits, and symbols. A hex password satisfies only two
+# categories and the container will refuse to start, so scripts/configure-deployment.sh
+# validates DB_PASSWORD against that policy for this provider.
+#
+# Unlike PostgreSQL and MySQL this image runs no initializer scripts, so the database
+# and the unprivileged login are created by config/db/sqlserver/pre-deploy.sh once the
+# server accepts connections. Budget roughly 2GB of memory for the container.
+
+accessories:
+  sqlserver:
+    service: <%= ENV['SERVICE'] %>-sqlserver
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    host: <%= ENV['KAMAL_DEPLOY_IP'] %>
+    env:
+      clear:
+        ACCEPT_EULA: "Y"
+        MSSQL_PID: Developer
+      secret:
+        - MSSQL_SA_PASSWORD
+    volumes:
+      # The image runs as uid 10001; pre-deploy.sh creates this directory with that owner
+      # because a bind mount owned by root leaves SQL Server unable to write its files.
+      - /opt/docker/<%= ENV['SERVICE'] %>/mssql-2022:/var/opt/mssql

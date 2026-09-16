@@ -29,10 +29,14 @@ public class ConfigureDbMigrations : IHostingStartup
                 using (var scope = scopeFactory.CreateScope())
                 {
                     using var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                    // The checked-in Identity migration targets SQLite. PostgreSQL is
-                    // bootstrapped from the current model; this template deliberately
+                    // The checked-in Identity migration targets SQLite. Every server provider
+                    // is bootstrapped from the current model instead; this template deliberately
                     // supports clean database recreation during active development.
-                    if (db.Database.IsNpgsql())
+                    if (db.Database.IsSqlite() && db.Database.GetMigrations().Any())
+                    {
+                        db.Database.Migrate();
+                    }
+                    else
                     {
                         // EnsureCreated() only creates tables when the database has none, and
                         // ServiceStack features such as API keys and CrudEvents create theirs
@@ -46,10 +50,6 @@ public class ConfigureDbMigrations : IHostingStartup
                         if (!schemaDb.TableExists("AspNetUsers"))
                             creator.CreateTables();
                     }
-                    else if (db.Database.GetMigrations().Any())
-                        db.Database.Migrate();
-                    else
-                        db.Database.EnsureCreated();
 
                     EnsureRolesAsync(scope.ServiceProvider).GetAwaiter().GetResult();
 

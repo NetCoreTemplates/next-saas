@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # config/deploy.yml loads .env through ERB, so honour the same file here.
 # shellcheck disable=SC1091
-[[ -f "$PROJECT_ROOT/.env" ]] && set -a && . "$PROJECT_ROOT/.env" && set +a
+. "$SCRIPT_DIR/load-env.sh"
+load_env_file "$PROJECT_ROOT/.env"
 SERVICE_NAME=""
 PROVIDER="${DB_PROVIDER:-sqlite}"
 CONFIRMED="false"

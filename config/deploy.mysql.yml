@@ -1,0 +1,25 @@
+# MySQL destination overlay: kamal deploy -d mysql
+#
+# Deep-merged over config/deploy.yml. Requires one GitHub Action Secret, which
+# .kamal/secrets.mysql reads from the environment and maps to both roles:
+#
+# - DB_PASSWORD (e.g. random-password)  - application login, and the root account
+#                                         the mysql image initializes
+#
+# Unlike PostgreSQL this needs no initializer script: the official image creates
+# MYSQL_DATABASE and the non-root MYSQL_USER with rights over it on first boot.
+
+accessories:
+  mysql:
+    service: <%= ENV['SERVICE'] %>-mysql
+    image: mysql:8.4
+    host: <%= ENV['KAMAL_DEPLOY_IP'] %>
+    env:
+      clear:
+        MYSQL_DATABASE: next_saas
+        MYSQL_USER: next_saas
+      secret:
+        - MYSQL_ROOT_PASSWORD
+        - MYSQL_PASSWORD
+    volumes:
+      - /opt/docker/<%= ENV['SERVICE'] %>/mysql-8:/var/lib/mysql

@@ -44,6 +44,11 @@ When adding a provider, add all of its files rather than branching the pipeline:
 - a provider that runs a database server takes exactly one operator-managed secret, `DB_PASSWORD`;
   map it to whatever additional env vars the image requires inside `.kamal/secrets.<provider>`
   rather than adding another GitHub secret;
+- only SQLite has checked-in EF Core migrations; every server provider bootstraps Identity from
+  the current model, so `Configure.Db.Migrations.cs` creates that schema explicitly when
+  `AspNetUsers` is absent rather than calling `EnsureCreated()`;
+- the operator scripts load `.env` with Dotenv semantics, where an existing environment variable
+  always wins; never source it with `set -a`, which silently overrides explicit arguments;
 - do not add provider-specific steps to `.github/workflows/release.yml`; use the pre-deploy hook;
 - every Kamal invocation in the workflow must carry `-d "$DB_PROVIDER"`, because a destination
   also selects the secrets file;

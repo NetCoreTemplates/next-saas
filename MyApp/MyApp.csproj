@@ -29,6 +29,9 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.*" />
+    <!-- Pomelo has no EF Core 10 release; Oracle's provider is the MySQL option on net10.0. -->
+    <PackageReference Include="MySql.EntityFrameworkCore" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.*" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.11.0" />
     <PackageReference Include="Stripe.net" Version="52.*" />
@@ -39,6 +42,8 @@
     <PackageReference Include="ServiceStack.Extensions" Version="10.*" />
     <PackageReference Include="ServiceStack.Ormlite.Sqlite.Data" Version="10.*" />
     <PackageReference Include="ServiceStack.OrmLite.PostgreSQL" Version="10.*" />
+    <PackageReference Include="ServiceStack.OrmLite.SqlServer" Version="10.*" />
+    <PackageReference Include="ServiceStack.OrmLite.MySql" Version="10.*" />
     <PackageReference Include="ServiceStack.Jobs" Version="10.*" />
   </ItemGroup>
 

@@ -9,12 +9,19 @@ one-variable change.
 The application already supports every provider at runtime through `Database:Provider`. The
 deployment layer selects one with a [Kamal destination](https://kamal-deploy.org):
 
-| Layer | SQLite | PostgreSQL |
-| --- | --- | --- |
-| Kamal overlay | `config/deploy.sqlite.yml` | `config/deploy.postgres.yml` |
-| Kamal secrets | `.kamal/secrets.sqlite` | `.kamal/secrets.postgres` (one `DB_PASSWORD`) |
-| Pre-deploy hook | none | `config/db/postgres/pre-deploy.sh` |
-| Production JSON | `appsettings.deploy.sqlite.example.json` | `appsettings.deploy.postgres.example.json` |
+| Layer | SQLite | PostgreSQL | MySQL | SQL Server |
+| --- | --- | --- | --- | --- |
+| Kamal overlay | `deploy.sqlite.yml` | `deploy.postgres.yml` | `deploy.mysql.yml` | `deploy.sqlserver.yml` |
+| Kamal secrets | `.kamal/secrets.sqlite` | `.kamal/secrets.postgres` | `.kamal/secrets.mysql` | `.kamal/secrets.sqlserver` |
+| Accessory image | none | `postgres:18-alpine` | `mysql:8.4` | `mssql/server:2022-latest` |
+| Creates DB and app login | n/a | `init.sh` initializer | image env vars | `pre-deploy.sh` via sqlcmd |
+| Production JSON | `appsettings.deploy.sqlite.example.json` | `…postgres…` | `…mysql…` | `…sqlserver…` |
+
+Every server provider takes the same single `DB_PASSWORD` secret and connects as an
+unprivileged login that owns only its own database. SQL Server additionally enforces a
+password policy — at least eight characters from three of uppercase, lowercase, digits, and
+symbols — so a hex password is rejected; `configure-deployment.sh` validates this before
+the container can fail to start. SQL Server also needs roughly 2GB of memory.
 
 `config/deploy.yml` and `.kamal/secrets-common` hold everything shared by all providers, and
 Kamal deep-merges the selected overlay over them. Each overlay must parse as a YAML mapping, so a

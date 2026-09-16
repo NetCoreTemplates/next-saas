@@ -6,7 +6,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_PATH="$PROJECT_ROOT/MyApp/appsettings.Production.json"
 # config/deploy.yml loads .env through ERB, so honour the same file here.
 # shellcheck disable=SC1091
-[[ -f "$PROJECT_ROOT/.env" ]] && set -a && . "$PROJECT_ROOT/.env" && set +a
+. "$SCRIPT_DIR/load-env.sh"
+load_env_file "$PROJECT_ROOT/.env"
 PROVIDER="${DB_PROVIDER:-sqlite}"
 SERVICE_NAME=""
 REPOSITORY=""
@@ -22,7 +23,8 @@ Points the ignored production JSON at the chosen database provider, validates it
 optionally uploads the matching GitHub Actions secrets and DB_PROVIDER variable.
 
 Options:
-  --provider <name>         sqlite or postgres (default: $DB_PROVIDER, else sqlite).
+  --provider <name>         sqlite, postgres, mysql, or sqlserver
+                            (default: $DB_PROVIDER, else sqlite).
   --service <service>       Kamal service name, used to resolve the database host.
   --json <path>             Production JSON to update.
   --repo <owner/name>       GitHub repository for secret updates.
@@ -86,7 +88,7 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   exit 2
 fi
 
-if [[ "$PROVIDER" == "postgres" ]]; then
+if [[ "$PROVIDER" != "sqlite" ]]; then
   if [[ -z "${DB_PASSWORD:-}" ]]; then
     read -r -s -p 'Database password: ' DB_PASSWORD
     printf '\n'
@@ -100,6 +102,22 @@ if [[ "$PROVIDER" == "postgres" ]]; then
   if [[ "$DB_PASSWORD" == *';'* || "$DB_PASSWORD" == *$'\n'* || "$DB_PASSWORD" == *$'\r'* ]]; then
     printf 'DB_PASSWORD cannot contain a semicolon, carriage return, or newline.\n' >&2
     exit 2
+  fi
+  if [[ "$PROVIDER" == "sqlserver" ]]; then
+    # SQL Server refuses to start when sa fails its password policy: at least eight
+    # characters drawn from three of uppercase, lowercase, digits, and symbols. A hex
+    # password satisfies only two, so reject it here rather than at container boot.
+    categories=0
+    [[ "$DB_PASSWORD" =~ [A-Z] ]] && categories=$((categories + 1))
+    [[ "$DB_PASSWORD" =~ [a-z] ]] && categories=$((categories + 1))
+    [[ "$DB_PASSWORD" =~ [0-9] ]] && categories=$((categories + 1))
+    [[ "$DB_PASSWORD" =~ [^A-Za-z0-9] ]] && categories=$((categories + 1))
+    if (( categories < 3 )); then
+      printf 'SQL Server requires DB_PASSWORD to use three of uppercase, lowercase, digits, and symbols.\n' >&2
+      printf 'A hex password satisfies only two. Generate one with:\n' >&2
+      printf "  openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40\n" >&2
+      exit 2
+    fi
   fi
 fi
 
@@ -139,6 +157,31 @@ const providers = {
       RequireExplicitMigrations: false,
     }
   },
+  sqlserver: () => {
+    config.Database = { ...(config.Database ?? {}), Provider: 'SqlServer', AutoMigrateEmpty: false }
+    config.ConnectionStrings = {
+      ...(config.ConnectionStrings ?? {}),
+      // The accessory serves a self-signed certificate on the private Kamal network.
+      DefaultConnection: `Server=${service}-sqlserver,1433;Database=next_saas;User Id=next_saas;Password=${password};Encrypt=True;TrustServerCertificate=True`,
+    }
+    config.Deployment = {
+      ...(config.Deployment ?? {}),
+      RequireNetworkDatabase: true,
+      RequireExplicitMigrations: true,
+    }
+  },
+  mysql: () => {
+    config.Database = { ...(config.Database ?? {}), Provider: 'MySql', AutoMigrateEmpty: false }
+    config.ConnectionStrings = {
+      ...(config.ConnectionStrings ?? {}),
+      DefaultConnection: `Server=${service}-mysql;Port=3306;Database=next_saas;User Id=next_saas;Password=${password};SslMode=Preferred`,
+    }
+    config.Deployment = {
+      ...(config.Deployment ?? {}),
+      RequireNetworkDatabase: true,
+      RequireExplicitMigrations: true,
+    }
+  },
   postgres: () => {
     config.Database = { ...(config.Database ?? {}), Provider: 'PostgreSql', AutoMigrateEmpty: false }
     config.ConnectionStrings = {
@@ -172,7 +215,7 @@ if [[ "$SET_GITHUB_SECRETS" == "true" ]]; then
     printf -- '--repo <owner/name> is required with --set-github-secrets.\n' >&2
     exit 2
   fi
-  if [[ "$PROVIDER" == "postgres" ]]; then
+  if [[ "$PROVIDER" != "sqlite" ]]; then
     printf '%s' "$DB_PASSWORD" | gh secret set DB_PASSWORD --repo "$REPOSITORY"
   fi
   gh secret set APPSETTINGS_JSON --repo "$REPOSITORY" < "$CONFIG_PATH"
