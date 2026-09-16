@@ -4,7 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_PATH="$PROJECT_ROOT/MyApp/appsettings.Production.json"
-PROVIDER="sqlite"
+# config/deploy.yml loads .env through ERB, so honour the same file here.
+# shellcheck disable=SC1091
+[[ -f "$PROJECT_ROOT/.env" ]] && set -a && . "$PROJECT_ROOT/.env" && set +a
+PROVIDER="${DB_PROVIDER:-sqlite}"
 SERVICE_NAME=""
 REPOSITORY=""
 SET_GITHUB_SECRETS="false"
@@ -19,15 +22,15 @@ Points the ignored production JSON at the chosen database provider, validates it
 optionally uploads the matching GitHub Actions secrets and DB_PROVIDER variable.
 
 Options:
-  --provider <name>         sqlite (default) or postgres.
+  --provider <name>         sqlite or postgres (default: $DB_PROVIDER, else sqlite).
   --service <service>       Kamal service name, used to resolve the database host.
   --json <path>             Production JSON to update.
   --repo <owner/name>       GitHub repository for secret updates.
   --set-github-secrets      Upload APPSETTINGS_JSON, DB_PROVIDER, and provider credentials.
   -h, --help                Show this help.
 
-For --provider postgres, POSTGRES_PASSWORD and NEXT_SAAS_DB_PASSWORD are read from the
-environment or prompted for without echo. The existing JSON is backed up before it is changed.
+For a provider that runs a database server, DB_PASSWORD is read from the environment or
+.env, or prompted for without echo. The existing JSON is backed up before it is changed.
 EOF
 }
 
@@ -84,21 +87,18 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
 fi
 
 if [[ "$PROVIDER" == "postgres" ]]; then
-  if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
-    read -r -s -p 'PostgreSQL administrator password: ' POSTGRES_PASSWORD
+  if [[ -z "${DB_PASSWORD:-}" ]]; then
+    read -r -s -p 'Database password: ' DB_PASSWORD
     printf '\n'
   fi
-  if [[ -z "${NEXT_SAAS_DB_PASSWORD:-}" ]]; then
-    read -r -s -p 'next_saas application password: ' NEXT_SAAS_DB_PASSWORD
-    printf '\n'
-  fi
-  if (( ${#POSTGRES_PASSWORD} < 24 || ${#NEXT_SAAS_DB_PASSWORD} < 24 )); then
-    printf 'Both PostgreSQL passwords must be at least 24 characters.\n' >&2
+  # This value is generated, never typed, so require real entropy. It is also embedded in
+  # an ADO.NET connection string, where a semicolon would terminate the Password field.
+  if (( ${#DB_PASSWORD} < 24 )); then
+    printf 'DB_PASSWORD must be at least 24 characters. Generate one with: openssl rand -hex 32\n' >&2
     exit 2
   fi
-  if [[ "$POSTGRES_PASSWORD" == *$'\n'* || "$POSTGRES_PASSWORD" == *$'\r'* ||
-        "$NEXT_SAAS_DB_PASSWORD" == *';'* || "$NEXT_SAAS_DB_PASSWORD" == *$'\n'* || "$NEXT_SAAS_DB_PASSWORD" == *$'\r'* ]]; then
-    printf 'Passwords cannot contain newlines; the application password also cannot contain a semicolon.\n' >&2
+  if [[ "$DB_PASSWORD" == *';'* || "$DB_PASSWORD" == *$'\n'* || "$DB_PASSWORD" == *$'\r'* ]]; then
+    printf 'DB_PASSWORD cannot contain a semicolon, carriage return, or newline.\n' >&2
     exit 2
   fi
 fi
@@ -114,14 +114,14 @@ export NEXT_SAAS_CONFIG_PATH="$CONFIG_PATH"
 export NEXT_SAAS_CONFIG_TEMP="$TEMP_PATH"
 export NEXT_SAAS_SERVICE="$SERVICE_NAME"
 export NEXT_SAAS_PROVIDER="$PROVIDER"
-export NEXT_SAAS_DB_PASSWORD="${NEXT_SAAS_DB_PASSWORD:-}"
+export DB_PASSWORD="${DB_PASSWORD:-}"
 node - <<'NODE'
 const fs = require('fs')
 const source = process.env.NEXT_SAAS_CONFIG_PATH
 const target = process.env.NEXT_SAAS_CONFIG_TEMP
 const service = process.env.NEXT_SAAS_SERVICE
 const provider = process.env.NEXT_SAAS_PROVIDER
-const password = process.env.NEXT_SAAS_DB_PASSWORD
+const password = process.env.DB_PASSWORD
 const config = JSON.parse(fs.readFileSync(source, 'utf8'))
 
 // Each provider owns the Database, ConnectionStrings, and Deployment policy it implies.
@@ -173,8 +173,7 @@ if [[ "$SET_GITHUB_SECRETS" == "true" ]]; then
     exit 2
   fi
   if [[ "$PROVIDER" == "postgres" ]]; then
-    printf '%s' "$POSTGRES_PASSWORD" | gh secret set POSTGRES_PASSWORD --repo "$REPOSITORY"
-    printf '%s' "$NEXT_SAAS_DB_PASSWORD" | gh secret set NEXT_SAAS_DB_PASSWORD --repo "$REPOSITORY"
+    printf '%s' "$DB_PASSWORD" | gh secret set DB_PASSWORD --repo "$REPOSITORY"
   fi
   gh secret set APPSETTINGS_JSON --repo "$REPOSITORY" < "$CONFIG_PATH"
   gh variable set DB_PROVIDER --repo "$REPOSITORY" --body "$PROVIDER"

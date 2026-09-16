@@ -3,8 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# config/deploy.yml loads .env through ERB, so honour the same file here.
+# shellcheck disable=SC1091
+[[ -f "$PROJECT_ROOT/.env" ]] && set -a && . "$PROJECT_ROOT/.env" && set +a
 SERVICE_NAME=""
-PROVIDER="sqlite"
+PROVIDER="${DB_PROVIDER:-sqlite}"
 CONFIRMED="false"
 
 usage() {
@@ -18,7 +21,7 @@ GitHub secrets, and external services are preserved.
 
   --provider <name>  Kamal destination used to load configuration and secrets,
                      so it must be a provider this repository defines (default
-                     sqlite). It does NOT narrow what is removed: every accessory
+                     \$DB_PROVIDER, else sqlite). It does NOT narrow what is removed: every accessory
                      and app directory belonging to the service is removed
                      regardless, because the point is a clean slate for the next
                      deployment whichever provider that uses.
@@ -167,6 +170,13 @@ for container in ${ACCESSORY_CONTAINERS[@]+"${ACCESSORY_CONTAINERS[@]}"}; do
   kamal server exec --no-interactive -d "$PROVIDER" \
     "docker container rm --force '$container' >/dev/null 2>&1 || true"
   VERIFY+=" && test -z \"\$(docker ps -aq --filter name='^/$container\$')\""
+
+  # Kamal uploads an accessory's `files:` to ~/<accessory-service-name>/ on the host and
+  # only removes that directory through `kamal accessory remove`, which this script does
+  # not use. Its own env files live under the destination app directory removed below.
+  kamal server exec --no-interactive -d "$PROVIDER" \
+    "rm -rf -- \"\$HOME/$container\""
+  VERIFY+=" && test ! -e \"\$HOME/$container\""
 done
 
 # Kamal's own removal is destination-filtered, so anything deployed under a scope this

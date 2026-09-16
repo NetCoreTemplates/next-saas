@@ -12,7 +12,7 @@ deployment layer selects one with a [Kamal destination](https://kamal-deploy.org
 | Layer | SQLite | PostgreSQL |
 | --- | --- | --- |
 | Kamal overlay | `config/deploy.sqlite.yml` | `config/deploy.postgres.yml` |
-| Kamal secrets | `.kamal/secrets.sqlite` | `.kamal/secrets.postgres` |
+| Kamal secrets | `.kamal/secrets.sqlite` | `.kamal/secrets.postgres` (one `DB_PASSWORD`) |
 | Pre-deploy hook | none | `config/db/postgres/pre-deploy.sh` |
 | Production JSON | `appsettings.deploy.sqlite.example.json` | `appsettings.deploy.postgres.example.json` |
 
@@ -48,8 +48,11 @@ cp config/appsettings.deploy.sqlite.example.json MyApp/appsettings.Production.js
 ```
 
 `configure-deployment.sh` applies the provider's database policy to the JSON, runs
-`preflight.sh`, and uploads `APPSETTINGS_JSON`, the `DB_PROVIDER` variable, and any provider
-credentials. Run it again with `--provider postgres` to switch; nothing else in the JSON is
+`preflight.sh`, and uploads `APPSETTINGS_JSON`, the `DB_PROVIDER` variable, and `DB_PASSWORD`.
+A provider that runs a database server needs only that one password secret; `.kamal/secrets.postgres`
+maps it to both the application login and the `POSTGRES_PASSWORD` the postgres image requires.
+Both scripts read `.env` like `config/deploy.yml` does, so `DB_PROVIDER` and `DB_PASSWORD` set
+there are picked up and `--provider` defaults to `$DB_PROVIDER`. Run it again with `--provider postgres` to switch; nothing else in the JSON is
 touched.
 
 The local configuration filename is gitignored.

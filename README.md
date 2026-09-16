@@ -222,6 +222,7 @@ and `config/db/<provider>/pre-deploy.sh` provisions any accessory. The Release w
 `kamal` command, so switching providers changes one variable rather than the pipeline:
 
 ```bash
+export DB_PASSWORD="$(openssl rand -hex 32)"
 ./scripts/configure-deployment.sh \
   --provider postgres \
   --service my-app \

@@ -25,9 +25,8 @@ env:
   # is merged over config/deploy.yml, secrets come from .kamal/secrets-common plus
   # .kamal/secrets.<provider>, and config/db/<provider>/pre-deploy.sh runs before deploy.
   DB_PROVIDER: ${{ vars.DB_PROVIDER || 'sqlite' }}
-  # Only consumed by the postgres provider; harmlessly empty for every other provider.
-  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  NEXT_SAAS_DB_PASSWORD: ${{ secrets.NEXT_SAAS_DB_PASSWORD }}
+  # Only consumed by providers that run a database server; harmlessly empty otherwise.
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
 jobs:
   release:

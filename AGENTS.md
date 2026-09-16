@@ -41,6 +41,9 @@ When adding a provider, add all of its files rather than branching the pipeline:
 
 - do not add database accessories to `config/deploy.yml`, and do not add provider credentials to
   `.kamal/secrets-common`;
+- a provider that runs a database server takes exactly one operator-managed secret, `DB_PASSWORD`;
+  map it to whatever additional env vars the image requires inside `.kamal/secrets.<provider>`
+  rather than adding another GitHub secret;
 - do not add provider-specific steps to `.github/workflows/release.yml`; use the pre-deploy hook;
 - every Kamal invocation in the workflow must carry `-d "$DB_PROVIDER"`, because a destination
   also selects the secrets file;

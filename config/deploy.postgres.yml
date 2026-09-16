@@ -1,10 +1,10 @@
 # PostgreSQL destination overlay: kamal deploy -d postgres
 #
-# Deep-merged over config/deploy.yml. Requires these GitHub Action Secrets, which
-# .kamal/secrets.postgres reads from the environment:
+# Deep-merged over config/deploy.yml. Requires one GitHub Action Secret, which
+# .kamal/secrets.postgres reads from the environment and maps to both roles:
 #
-# - POSTGRES_PASSWORD (e.g. random-password)      - PostgreSQL superuser
-# - NEXT_SAAS_DB_PASSWORD (e.g. random-password)  - unprivileged application login
+# - DB_PASSWORD (e.g. random-password)  - application login, and the cluster superuser
+#                                         the postgres image initializes
 #
 # Note that Kamal deep-merges with array replacement, so any list redefined here
 # replaces the base list rather than appending to it.
@@ -20,7 +20,7 @@ accessories:
         POSTGRES_DB: postgres
       secret:
         - POSTGRES_PASSWORD
-        - NEXT_SAAS_DB_PASSWORD
+        - DB_PASSWORD
     files:
       - config/db/postgres/init.sh:/docker-entrypoint-initdb.d/10-next-saas.sh
     volumes:
