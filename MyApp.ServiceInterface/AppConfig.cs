@@ -22,7 +22,6 @@ public class DeploymentConfig
     public bool RequireStripeWebhook { get; set; } = true;
     public bool AllowTestStripeKeys { get; set; }
     public bool RequireRestrictedHosts { get; set; } = true;
-    public bool RequireExplicitMigrations { get; set; } = true;
 }
 
 public class SecurityConfig
@@ -81,8 +80,6 @@ public static class ProductionReadiness
         var connection = values.GetConnectionString("DefaultConnection");
         if (deployment.RequireNetworkDatabase && string.IsNullOrEmpty(connection))
             errors.Add("ConnectionStrings.DefaultConnection is required for a networked database server.");
-        if (deployment.RequireExplicitMigrations && values.GetValue("Database:AutoMigrateEmpty", true))
-            errors.Add("Database.AutoMigrateEmpty must be false in production; run the migrate app task during deployment.");
         if (deployment.RequireSmtp && notifications.Provider != EmailProvider.Smtp)
             errors.Add("Notifications.Provider must be Smtp in production so invitations and account recovery are deliverable.");
         if (deployment.RequireStripe)

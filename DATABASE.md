@@ -117,8 +117,7 @@ ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes
 
 ## Step 4 — Configure production with the same provider
 
-Start from the matching profile. It carries the database policy the provider implies, including
-whether migrations run automatically:
+Start from the matching profile. It carries the database policy the provider implies:
 
 ```bash
 cp config/appsettings.deploy.postgres.example.json MyApp/appsettings.Production.json
@@ -181,8 +180,8 @@ The Release workflow reads the `DB_PROVIDER` repository variable, runs
 
 After the release, `https://your-domain/ready` reports database and file-store readiness.
 
-With `Database:AutoMigrateEmpty` false — the default for every server provider — apply
-migrations as a deliberate release step before starting multiple instances:
+An empty database bootstraps itself on first start. Apply later migrations as a deliberate
+release step, before starting multiple instances:
 
 ```bash
 cd MyApp

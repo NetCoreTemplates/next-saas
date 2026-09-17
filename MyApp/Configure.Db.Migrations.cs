@@ -76,10 +76,10 @@ public class ConfigureDbMigrations : IHostingStartup
             AppTasks.Register("migrate.rerun", args => migrator.Rerun(args[0]));
             AppTasks.Run();
 
-            var configuration = appHost.GetApplicationServices().GetRequiredService<IConfiguration>();
-            if (configuration.GetValue("Database:AutoMigrateEmpty", true))
+            // To ensure there's a valid schema before starting, check for an empty database and run migrations if necessary.
+            // Applying later migrations stays a deliberate release step through the migrate app task.
+            using (var db = dbFactory.Open())
             {
-                using var db = dbFactory.Open();
                 if (!db.TableExists<Workspace>())
                 {
                     appHost.GetApplicationServices().GetRequiredService<ILogger<ConfigureDbMigrations>>()

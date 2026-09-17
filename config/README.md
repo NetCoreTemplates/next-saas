@@ -62,7 +62,7 @@ deliberately optional in this profile.
 ## PostgreSQL production
 
 Use `appsettings.deploy.postgres.example.json` for production operation. It requires PostgreSQL,
-explicit release migrations, SMTP, Stripe, and the Stripe webhook.
+SMTP, Stripe, and the Stripe webhook.
 
 ## Workflow
 

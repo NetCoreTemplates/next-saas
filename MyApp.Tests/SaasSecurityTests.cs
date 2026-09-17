@@ -15,7 +15,7 @@ public class SaasSecurityTests
     public void Production_readiness_rejects_unsafe_template_defaults()
     {
         var values = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
-            ["AllowedHosts"] = "*", ["Database:Provider"] = "Sqlite", ["Database:AutoMigrateEmpty"] = "true",
+            ["AllowedHosts"] = "*", ["Database:Provider"] = "Sqlite",
         }).Build();
         var result = ProductionReadiness.Evaluate(values, new DeploymentConfig(),
             new AppConfig { BaseUrl = "http://localhost:5001" }, new ProductConfig(),
@@ -36,7 +36,6 @@ public class SaasSecurityTests
     {
         var values = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
             ["AllowedHosts"] = "saas.acme.test", ["Database:Provider"] = "PostgreSql",
-            ["Database:AutoMigrateEmpty"] = "false",
             ["ConnectionStrings:DefaultConnection"] = "Host=db;Database=acme;Username=acme;Password=secret",
         }).Build();
         var result = ProductionReadiness.Evaluate(values, new DeploymentConfig(),

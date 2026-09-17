@@ -146,7 +146,7 @@ const config = JSON.parse(fs.readFileSync(source, 'utf8'))
 // Every other setting in the file is preserved as-is.
 const providers = {
   sqlite: () => {
-    config.Database = { ...(config.Database ?? {}), Provider: 'Sqlite', AutoMigrateEmpty: true }
+    config.Database = { ...(config.Database ?? {}), Provider: 'Sqlite' }
     config.ConnectionStrings = {
       ...(config.ConnectionStrings ?? {}),
       DefaultConnection: 'Data Source=App_Data/app.db;Cache=Shared',
@@ -154,11 +154,10 @@ const providers = {
     config.Deployment = {
       ...(config.Deployment ?? {}),
       RequireNetworkDatabase: false,
-      RequireExplicitMigrations: false,
     }
   },
   sqlserver: () => {
-    config.Database = { ...(config.Database ?? {}), Provider: 'SqlServer', AutoMigrateEmpty: false }
+    config.Database = { ...(config.Database ?? {}), Provider: 'SqlServer' }
     config.ConnectionStrings = {
       ...(config.ConnectionStrings ?? {}),
       // The accessory serves a self-signed certificate on the private Kamal network.
@@ -167,11 +166,10 @@ const providers = {
     config.Deployment = {
       ...(config.Deployment ?? {}),
       RequireNetworkDatabase: true,
-      RequireExplicitMigrations: true,
     }
   },
   mysql: () => {
-    config.Database = { ...(config.Database ?? {}), Provider: 'MySql', AutoMigrateEmpty: false }
+    config.Database = { ...(config.Database ?? {}), Provider: 'MySql' }
     config.ConnectionStrings = {
       ...(config.ConnectionStrings ?? {}),
       DefaultConnection: `Server=${service}-mysql;Port=3306;Database=next_saas;User Id=next_saas;Password=${password};SslMode=Preferred`,
@@ -179,11 +177,10 @@ const providers = {
     config.Deployment = {
       ...(config.Deployment ?? {}),
       RequireNetworkDatabase: true,
-      RequireExplicitMigrations: true,
     }
   },
   postgres: () => {
-    config.Database = { ...(config.Database ?? {}), Provider: 'PostgreSql', AutoMigrateEmpty: false }
+    config.Database = { ...(config.Database ?? {}), Provider: 'PostgreSql' }
     config.ConnectionStrings = {
       ...(config.ConnectionStrings ?? {}),
       DefaultConnection: `Host=${service}-postgres;Port=5432;Database=next_saas;Username=next_saas;Password=${password};SSL Mode=Disable`,
@@ -191,12 +188,12 @@ const providers = {
     config.Deployment = {
       ...(config.Deployment ?? {}),
       RequireNetworkDatabase: true,
-      RequireExplicitMigrations: true,
     }
   },
 }
 providers[provider]()
 delete config.Deployment.RequirePostgreSql
+delete config.Deployment.RequireExplicitMigrations
 fs.writeFileSync(target, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
 NODE
 

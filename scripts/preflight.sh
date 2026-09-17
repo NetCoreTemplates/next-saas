@@ -65,16 +65,6 @@ else
   fi
 fi
 
-if enabled "${Deployment__RequireExplicitMigrations:-true}"; then
-  if enabled "${Database__AutoMigrateEmpty:-true}"; then
-    fail "Database__AutoMigrateEmpty must be false when explicit migrations are required"
-  else
-    pass "automatic production migration is disabled"
-  fi
-else
-  enabled "${Database__AutoMigrateEmpty:-true}" && warn "empty database migration is enabled explicitly" || pass "automatic empty-state migration is disabled"
-fi
-
 if enabled "${Deployment__RequireSmtp:-true}"; then
   if [[ "${Notifications__Provider:-}" == "Smtp" ]]; then pass "SMTP delivery is selected"; else fail "Notifications__Provider must be Smtp"; fi
   required SmtpConfig__Host "SMTP host"

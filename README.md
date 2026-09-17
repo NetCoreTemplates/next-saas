@@ -252,7 +252,7 @@ set +a
 ./scripts/preflight.sh
 ```
 
-Use `./scripts/preflight.sh --config-only` when build artifacts have already passed CI. With `Database__AutoMigrateEmpty=false`, apply migrations as a deliberate release step before starting multiple application instances:
+Use `./scripts/preflight.sh --config-only` when build artifacts have already passed CI. An empty database bootstraps itself on first start; apply later migrations as a deliberate release step before starting multiple application instances:
 
 ```bash
 cd MyApp
