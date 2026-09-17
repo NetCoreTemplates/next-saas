@@ -1,8 +1,13 @@
 # Deployment configuration profiles
 
+[DATABASE.md](../DATABASE.md) is the step-by-step guide for choosing a provider and configuring
+it locally and in production. This file is the reference behind it.
+
 These templates make the database choice a configuration decision rather than a code change.
-SQLite is the default so a first deployment needs no external service; switching providers is a
-one-variable change.
+The same choice applies locally and in production: `DB_PROVIDER` selects the Kamal destination
+that deploys, and `./scripts/dev-db.sh up` starts that same provider on the developer's machine,
+so nobody develops against a database they do not ship. SQLite is the default so a first
+deployment needs no external service; switching providers is a one-variable change.
 
 ## How the provider switch works
 
@@ -16,6 +21,7 @@ deployment layer selects one with a [Kamal destination](https://kamal-deploy.org
 | Accessory image | none | `postgres:18-alpine` | `mysql:8.4` | `mssql/server:2022-latest` |
 | Creates DB and app login | n/a | `init.sh` initializer | image env vars | `pre-deploy.sh` via sqlcmd |
 | Production JSON | `appsettings.deploy.sqlite.example.json` | `…postgres…` | `…mysql…` | `…sqlserver…` |
+| Local container | none | `./scripts/dev-db.sh up` | same | same |
 
 Every server provider takes the same single `DB_PASSWORD` secret and connects as an
 unprivileged login that owns only its own database. SQL Server additionally enforces a
@@ -27,6 +33,22 @@ the container can fail to start. SQL Server also needs roughly 2GB of memory.
 Kamal deep-merges the selected overlay over them. Each overlay must parse as a YAML mapping, so a
 provider with nothing to override still declares `accessories: {}`. The Release workflow reads the `DB_PROVIDER`
 repository variable (default `sqlite`) and passes `-d "$DB_PROVIDER"` to every `kamal` command.
+
+## Local parity
+
+`./scripts/dev-db.sh up` runs the provider named by `DB_PROVIDER` from the same image as its
+accessory, creates the same `next_saas` database and unprivileged `next_saas` login using the
+same initializers (`config/db/postgres/init.sh`, `config/db/sqlserver/init.sql`), and writes the
+local connection into the private `.env` the application reads in Development, leaving
+`MyApp/appsettings.Development.json` on the SQLite default a new clone starts from. Only the host
+and the password differ from the deployment; the local password is fixed, local-only, and
+overridable with `DEV_DB_PASSWORD`, while `DB_PASSWORD` stays a deployment secret.
+
+`./scripts/reset-dev.sh --yes` follows the local provider: it deletes the SQLite file, or
+recreates the container's data volume, then migrates and reseeds.
+
+A provider added below should gain its local case in `scripts/dev-db.sh` at the same time, or
+developers silently fall back to a different engine than the one deployed.
 
 ## SQLite validation
 
@@ -83,7 +105,9 @@ Adding MySQL or a managed database is additive and needs no workflow change:
 3. add `config/db/<provider>/pre-deploy.sh` if it needs an accessory booted;
 4. add a `config/appsettings.deploy.<provider>.example.json` profile and a branch in
    `scripts/configure-deployment.sh`;
-5. set the `DB_PROVIDER` repository variable to the new name.
+5. add its image, connection string, readiness probe, and client shell to `scripts/dev-db.sh`
+   so it runs locally too, and list it in `DATABASE.md`;
+6. set the `DB_PROVIDER` repository variable to the new name.
 
 For a managed database hosted elsewhere, steps 2 and 3 reduce to an overlay with no accessory:
 only the connection string in the production JSON changes.

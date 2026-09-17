@@ -758,6 +758,9 @@ Implementation rules for every phase:
 - use AutoQuery for safe administrative reads, but custom Services for state transitions;
 - make every command with external or retryable effects idempotent;
 - retain a useful no-Stripe, SQLite, local-filesystem development experience;
+- let a developer run the provider that is deployed: `DB_PROVIDER` selects both the Kamal
+  destination and the local database `scripts/dev-db.sh` starts, so production parity is a
+  default rather than an exercise;
 - add PostgreSQL integration coverage for concurrency and isolation behavior;
 - update the operator documentation and sample configuration with each phase.
 
@@ -1263,7 +1266,8 @@ An adopter or coding agent can understand, rebrand, configure, extend, test, and
 
 #### Setup and verification
 
-- Add a deterministic development reset/seed command that recreates SQLite, local file storage, sample users, Acme plans, and representative analytics data.
+- Add a deterministic development reset/seed command that recreates the local database for whichever provider is configured, local file storage, sample users, Acme plans, and representative analytics data.
+- Provide a local database command that runs the deployed provider from the same images, database name, login, and initializer scripts, writing its connection to a gitignored Development-only overlay.
 - The reset command must require an explicit development environment and exact configured paths; it must never infer or delete a broad directory.
 - Add `.env.example`/configuration examples with placeholders only.
 - Add Stripe CLI test fixtures, fake email capture, and sample API scripts.

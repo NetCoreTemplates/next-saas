@@ -1,10 +1,15 @@
 # Customize the template
 
-Start with global identity and policy:
+Customize the database first, in [DATABASE.md](DATABASE.md): set `DB_PROVIDER` in `.env` to the
+provider you intend to deploy (`sqlite`, `postgres`, `mysql`, or `sqlserver`) and run
+`./scripts/dev-db.sh up`, so development happens on the engine that ships and one variable also
+configures production.
+
+Then global identity and policy:
 
 1. Update `Product`, `FileStorage`, `Notifications`, and `Saas` in `MyApp/appsettings.json`.
 2. Replace Acme logo treatment and CSS tokens in the shared layouts.
-3. Change seed plans in `MyApp/Migrations/Migration1001.cs`; during template development you may reset SQLite and rerun migration.
+3. Change seed plans in `MyApp/Migrations/Migration1001.cs`; during template development you may reset the local database with `ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes` and rerun migration.
 4. Keep feature and meter keys stable once customers or usage exist.
 5. Regenerate `MyApp.Client/lib/dtos.ts` after C# contract changes.
 6. Run `./scripts/verify.sh`.

@@ -2,7 +2,10 @@
 
 This repository is a full-stack .NET 10, ServiceStack, Next.js 16, React 19, TypeScript, OrmLite, ASP.NET Core Identity, and Stripe Billing template.
 
-Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows.
+Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows, and [DATABASE.md](DATABASE.md) for the database provider workflow that spans local development and production.
+
+The canonical product documentation is the published docs hub, whose source lives in a separate
+repository. Keep it in sync with every change; see [Documentation](#documentation).
 
 ## Product boundary
 
@@ -26,12 +29,20 @@ Use **Organization** in all customer-facing UI and copy. The internal domain, da
 8. Never put Stripe secret or webhook keys in browser code.
 9. Published plan versions are immutable. Create a draft version for changes.
 10. Customer deletion or payment failure never deletes product data; it changes access policy.
-11. The database provider is a configuration choice, never a code fork. SQLite is the default.
+11. The database provider is a configuration choice, never a code fork. SQLite is the default,
+    and whichever provider is deployed is also the one run locally.
 
 ## Database providers
 
 `MyApp/Configure.Db.cs` branches on `Database:Provider` for both OrmLite and EF Core, so the
-application itself is provider-agnostic. Deployment selects a provider with a Kamal destination:
+application itself is provider-agnostic. `DB_PROVIDER` in `.env` selects the provider on both
+sides: `scripts/dev-db.sh` runs it locally from the same image, database name, login, and
+initializer scripts the deployment uses, writing the connection into the private, gitignored
+`.env` that `Program.cs` applies in Development before `CreateBuilder` runs, because
+`CreateBuilder` composes HostingStartup configuration. Local overrides belong in `.env`, never in
+a source-controlled settings file: `MyApp/appsettings.Development.json` stays on the SQLite
+default a new clone starts from, and `MyApp/appsettings.json` stays at the template default.
+Deployment selects a provider with a Kamal destination:
 `config/deploy.<provider>.yml` deep-merges over `config/deploy.yml`, secrets resolve from
 `.kamal/secrets-common` plus `.kamal/secrets.<provider>`, and `config/db/<provider>/pre-deploy.sh`
 provisions any accessory. The Release workflow passes `-d "$DB_PROVIDER"` to every `kamal`
@@ -39,6 +50,9 @@ command, where `DB_PROVIDER` is a repository variable defaulting to `sqlite`.
 
 When adding a provider, add all of its files rather than branching the pipeline:
 
+- add its local case to `scripts/dev-db.sh` in the same change as its deployment files, so
+  developers are never pushed back onto a different engine than production, and add it to the
+  provider table in `DATABASE.md`;
 - do not add database accessories to `config/deploy.yml`, and do not add provider credentials to
   `.kamal/secrets-common`;
 - a provider that runs a database server takes exactly one operator-managed secret, `DB_PASSWORD`;
@@ -74,6 +88,41 @@ Effective entitlement precedence is customer override, pinned plan version, publ
 
 Global JSON configuration is read-only in Admin UI. It should remain reviewable infrastructure configuration.
 
+## Documentation
+
+The docs hub at `https://react-templates.net/docs/next-saas` is the canonical documentation, and
+its source is a sibling checkout:
+
+```text
+../../ServiceStack/locode.dev/content/docs/next-saas/    relative to this repository
+```
+
+If that checkout is missing, say so and list the pages that need updating instead of silently
+leaving them stale.
+
+Treat those pages as part of the change, not as follow-up work. A behavior change that a page
+describes is not complete until the page describes the new behavior.
+
+| What changed | Pages to check |
+| --- | --- |
+| database provider, `.env`, local setup | `getting-started/choose-your-database`, `getting-started/local-setup`, `operations/choose-a-database`, `operations/configuration`, `operations/database-and-storage` |
+| an operator script's name, flags, or output | the page that prints that command, plus `operations/*` |
+| a customer-facing page or flow | the matching `features/*` page, and `getting-started/project-tour` |
+| an API contract or DTO | `features/*` for that module, and `development/*` recipes that call it |
+| quota, entitlement, or billing policy | `concepts/usage-and-quotas`, `concepts/plans-and-entitlements`, `features/billing-and-subscriptions` |
+| a security control or production gate | `security/*`, `operations/configuration` |
+| a new onboarding step | `getting-started/meta.json` and the numbered list in `index.mdx`, plus the same list in `README.md` |
+
+Rules for those edits:
+
+- state current behavior; do not narrate the change or reference a version that shipped it;
+- grep the whole `next-saas` docs tree for the old claim rather than editing only the obvious
+  page, because the same fact is often stated in getting-started, features, and operations;
+- keep `README.md`, `DATABASE.md`, `CUSTOMIZE.md`, and this guide consistent with the hub; the
+  repository files are the short version and must not contradict it;
+- run `npm run build` in the docs repository, which also catches a broken `meta.json`;
+- check that every internal `/docs/...` link and `#anchor` you add resolves.
+
 ## Key files
 
 ```text
@@ -84,6 +133,9 @@ MyApp.ServiceInterface/SaasServices.cs       workspace, usage, billing, and admi
 MyApp/Configure.Saas.cs                      dependency setup and Stripe SDK gateway
 MyApp/Migrations/Migration1001.cs            SaaS schema and default plan seed
 MyApp/appsettings.json                       global SaaS and Stripe policy
+MyApp/appsettings.Development.json           SQLite development default; .env overrides it
+DATABASE.md                                  step-by-step provider setup, local and production
+scripts/dev-db.sh                            runs the deployed database provider locally
 MyApp/Configure.ApiKeys.cs                   API key scopes
 MyApp/Configure.BackgroundJobs.cs            job infrastructure
 MyApp/Configure.RequestLogs.cs                diagnostic request logging
@@ -103,6 +155,13 @@ From the repository root:
 ```bash
 dotnet build MyApp.slnx
 dotnet test MyApp.slnx
+```
+
+Run the deployed database locally before starting the application:
+
+```bash
+./scripts/dev-db.sh up        # provider from DB_PROVIDER; sqlite needs no container
+./scripts/dev-db.sh status
 ```
 
 Run the application:
@@ -270,4 +329,6 @@ Before completing a change:
 4. run frontend type-check and tests;
 5. run the production static export;
 6. verify no secret, generated database, or local data-protection key is staged;
-7. update `README.md`, `PLAN.md`, or this guide if an invariant or workflow changed.
+7. update `README.md`, `PLAN.md`, or this guide if an invariant or workflow changed;
+8. update the docs hub pages the change affects and build that repository (see
+   [Documentation](#documentation)).
