@@ -29,12 +29,13 @@ Customer-facing screens call the tenant/account boundary an **Organization**. In
 New to the template? Work through the onboarding guides in order:
 
 1. [Understand the template](https://react-templates.net/docs/next-saas/getting-started/overview)
-2. [Run it locally](https://react-templates.net/docs/next-saas/getting-started/local-setup)
-3. [Tour the project](https://react-templates.net/docs/next-saas/getting-started/project-tour)
-4. [Customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product)
-5. [Add a metered feature](https://react-templates.net/docs/next-saas/getting-started/add-a-metered-feature)
-6. [Connect Stripe sandbox](https://react-templates.net/docs/next-saas/getting-started/connect-stripe-sandbox)
-7. [Verify and ship](https://react-templates.net/docs/next-saas/getting-started/verify-and-ship)
+2. [Choose your database](https://react-templates.net/docs/next-saas/getting-started/choose-your-database)
+3. [Run it locally](https://react-templates.net/docs/next-saas/getting-started/local-setup)
+4. [Tour the project](https://react-templates.net/docs/next-saas/getting-started/project-tour)
+5. [Customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product)
+6. [Add a metered feature](https://react-templates.net/docs/next-saas/getting-started/add-a-metered-feature)
+7. [Connect Stripe sandbox](https://react-templates.net/docs/next-saas/getting-started/connect-stripe-sandbox)
+8. [Verify and ship](https://react-templates.net/docs/next-saas/getting-started/verify-and-ship)
 
 Then use the reference guides, which you can read in any order:
 
@@ -46,11 +47,18 @@ Then use the reference guides, which you can read in any order:
 | [Operations](https://react-templates.net/docs/next-saas/operations) | Configuration, secrets, deployment, database and storage, health, job recovery, retention, backup and restore, troubleshooting |
 | [Security](https://react-templates.net/docs/next-saas/security) | Authentication, authorization, tenant isolation, API credentials, webhook security, support access, privacy, production security review |
 
+Two guides in this repository cover the first decisions you make, in order:
+
+1. [DATABASE.md](DATABASE.md) — choose your database provider and configure it for local
+   development and production at the same time. Do this first. Published version:
+   [Choose your database](https://react-templates.net/docs/next-saas/getting-started/choose-your-database).
+2. [CUSTOMIZE.md](CUSTOMIZE.md) — product identity, plans, meters, and content.
+
 The architectural and product decisions are recorded in [PLAN.md](PLAN.md), and [features.json](features.json) is a machine-readable map of the modules.
 
 ## Run locally
 
-Install dependencies once:
+### Step 1 — Install dependencies
 
 ```bash
 cd MyApp.Client
@@ -59,7 +67,44 @@ cd ../MyApp
 npm install
 ```
 
-The first normal application start detects an empty database and creates the Identity schema, SaaS schema, reference plans, and Development-only sample users automatically. Existing databases are never destructively recreated; use the explicit migration task when applying later migrations.
+### Step 2 — Choose your database
+
+This is the first thing to customize, and it is one decision for both environments:
+`DB_PROVIDER` selects the database you run locally *and* the Kamal destination that deploys.
+
+```bash
+cp .env.example .env                 # first time only
+```
+
+Set the provider in `.env` — `sqlite`, `postgres`, `mysql`, or `sqlserver`:
+
+```bash
+DB_PROVIDER=postgres
+```
+
+Start it:
+
+```bash
+./scripts/dev-db.sh up
+```
+
+For a server provider this runs the same image as the deployment's accessory, with the same
+`next_saas` database, the same unprivileged login, and the same initializer scripts, then writes
+the connection into your private `.env`, which the application reads in Development. SQLite starts no container and stays the zero-dependency default.
+
+**[DATABASE.md](DATABASE.md) is the step-by-step guide**, and it continues past local setup into
+configuring the same provider for production.
+
+### Step 3 — Create the schema
+
+```bash
+cd MyApp
+npm run migrate
+```
+
+The first normal application start also detects an empty database and creates the Identity schema, SaaS schema, reference plans, and Development-only sample users automatically. Existing databases are never destructively recreated; use the explicit migration task when applying later migrations.
+
+### Step 4 — Start the application
 
 Start the ASP.NET Core host. It automatically starts and proxies the Next.js development server:
 
@@ -74,6 +119,8 @@ Open `https://localhost:5001`. Seeded development accounts all use `p@55wOrd`:
 - `manager@email.com` — standard customer flow;
 - `employee@email.com` — standard customer flow;
 - `test@email.com` — minimal authenticated account.
+
+Then customize the product itself: [CUSTOMIZE.md](CUSTOMIZE.md).
 
 ## Runtime architecture
 
@@ -212,29 +259,53 @@ cd MyApp
 dotnet run --no-launch-profile --AppTasks=migrate
 ```
 
-### Choosing a database
+### Run the deployed database locally
 
-SQLite is the default so a first deployment needs no external service. The deployment layer
-selects a provider with a Kamal destination: `config/deploy.<provider>.yml` is merged over
-`config/deploy.yml`, secrets come from `.kamal/secrets-common` plus `.kamal/secrets.<provider>`,
-and `config/db/<provider>/pre-deploy.sh` provisions any accessory. The Release workflow reads the
-`DB_PROVIDER` repository variable (default `sqlite`) and passes `-d "$DB_PROVIDER"` to every
-`kamal` command, so switching providers changes one variable rather than the pipeline:
+[DATABASE.md](DATABASE.md) walks through choosing a provider, running it locally, and
+configuring the same one for production. In short:
+
+```bash
+./scripts/dev-db.sh up        # start the provider in DB_PROVIDER and write the local config
+./scripts/dev-db.sh status    # provider, container state, and connection target
+./scripts/dev-db.sh shell     # psql, mysql, or sqlcmd against the local database
+./scripts/dev-db.sh reset     # discard the local data volume and start empty
+./scripts/dev-db.sh down      # stop the container, keeping its data
+```
+
+Locally and in production the database is `next_saas`, owned by an unprivileged `next_saas`
+login; only the host and the password differ. PostgreSQL reuses `config/db/postgres/init.sh`
+and SQL Server reuses `config/db/sqlserver/init.sql`, the same initializers the deployment
+runs, so the two environments cannot drift. The local password is fixed and local-only
+(`DEV_DB_PASSWORD`, default `Dev_Passw0rd!Local`); production passwords live only in
+`DB_PASSWORD`. Point another tool at the same database with `eval "$(./scripts/dev-db.sh env)"`.
+
+The connection is written into `.env`, which is gitignored and which the application applies in
+Development, so any `Key__Sub` value there overrides the source-controlled settings on your
+machine only. `MyApp/appsettings.Development.json` therefore stays on the SQLite default every
+clone starts from, and a variable already set in your environment still wins over `.env`.
+
+Production selects the same provider with a Kamal destination: `config/deploy.<provider>.yml` is
+merged over `config/deploy.yml`, secrets come from `.kamal/secrets-common` plus
+`.kamal/secrets.<provider>`, and `config/db/<provider>/pre-deploy.sh` provisions any accessory.
+The Release workflow reads the `DB_PROVIDER` repository variable (default `sqlite`) and passes
+`-d "$DB_PROVIDER"` to every `kamal` command, so switching providers changes one variable rather
+than the pipeline:
 
 ```bash
 export DB_PASSWORD="$(openssl rand -hex 32)"
 ./scripts/configure-deployment.sh \
-  --provider postgres \
   --service my-app \
   --repo owner/my-app \
   --set-github-secrets
 ```
 
-See [Choose a database](https://react-templates.net/docs/next-saas/operations/choose-a-database)
-and [config/README.md](config/README.md) for the full matrix and for adding another provider.
+`--provider` defaults to `$DB_PROVIDER`, so local and production stay on one switch.
 `scripts/reset-kamal-deployment.sh` previews the exact service scope — containers, images,
 accessories, app directories, and persistent state — before an explicit `--yes` reset. It clears
 every provider's accessory, not just the selected one, so a provider switch leaves a clean slate.
+
+See [Choose a database](https://react-templates.net/docs/next-saas/operations/choose-a-database)
+and [config/README.md](config/README.md) for the full matrix and for adding another provider.
 
 Or run individual commands:
 
@@ -263,7 +334,8 @@ Useful development surfaces:
 - `/up` — health check.
 - `/ready` — database and file-store readiness.
 
-To recreate the development database and local file storage from an empty state:
+To recreate the development database and local file storage from an empty state, whichever
+provider is running:
 
 ```bash
 ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes
@@ -278,6 +350,7 @@ MyApp.ServiceInterface/      SaaS services, quota policy, Background Job command
 MyApp.ServiceModel/          shared domain entities and API contracts
 MyApp.Tests/                 unit and integration tests
 config/                      Kamal deployment configuration
+scripts/                     database, verification, deployment, and reset tooling
 ```
 
 The code favors explicit request DTOs, narrow services, configuration objects, and conventional folders. Those choices are intentionally predictable for both human maintainers and AI coding agents.
