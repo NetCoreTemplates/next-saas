@@ -7,6 +7,7 @@ using MyApp.Data;
 using MyApp.ServiceInterface;
 
 ApplyRuntimeSettingsEnvironment();
+ApplyDevelopmentEnvFile();
 AppHost.RegisterKey();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -164,5 +165,45 @@ static void ApplyRuntimeSettingsEnvironment()
             _ => value.GetRawText(),
         };
         Environment.SetEnvironmentVariable(string.Join("__", path), text);
+    }
+}
+
+/// <summary>
+/// Applies the developer's private .env in Development, so local overrides such as the database
+/// provider scripts/dev-db.sh writes never touch a source-controlled settings file. Keys use the
+/// ASP.NET Core environment convention, for example Database__Provider.
+///
+/// This runs before CreateBuilder because HostingStartup configuration, including the database
+/// provider in Configure.Db.cs, is composed while the builder is created. It follows the same
+/// Dotenv semantics as the operator scripts and config/deploy.yml: a variable already present in
+/// the environment always wins, so an explicit override on the command line still applies.
+/// </summary>
+static void ApplyDevelopmentEnvFile()
+{
+    if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") != Environments.Development)
+        return;
+
+    // The application runs from MyApp while .env sits beside the solution.
+    var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+    while (directory != null && !File.Exists(Path.Combine(directory.FullName, ".env")))
+        directory = directory.Parent;
+    if (directory == null)
+        return;
+
+    foreach (var line in File.ReadAllLines(Path.Combine(directory.FullName, ".env")))
+    {
+        var text = line.Trim();
+        if (text.Length == 0 || text.StartsWith('#'))
+            continue;
+        var separator = text.IndexOf('=');
+        if (separator <= 0)
+            continue;
+        var key = text[..separator].Trim();
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
+            continue;
+        var value = text[(separator + 1)..].Trim();
+        if (value.Length >= 2 && ((value[0] == '"' && value[^1] == '"') || (value[0] == '\'' && value[^1] == '\'')))
+            value = value[1..^1];
+        Environment.SetEnvironmentVariable(key, value);
     }
 }
