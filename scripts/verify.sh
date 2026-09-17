@@ -26,7 +26,11 @@ npm run build
 cd "$PROJECT_ROOT/MyApp"
 VERIFY_PORT="$((51000 + RANDOM % 1000))"
 VERIFY_URL="http://127.0.0.1:$VERIFY_PORT"
-env "ASPNETCORE_ENVIRONMENT=Production" "Deployment__EnforceStartupChecks=false" "ConnectionStrings__DefaultConnection=Data Source=$VERIFY_TEMP/empty.db;Cache=Shared" "FileStorage__RootPath=$VERIFY_TEMP/files" \
+# The empty-state gate is deliberately zero-dependency and asserts against the SQLite file
+# below, so pin the whole database decision. An operator's own appsettings.Production.json is
+# loaded by this Production run and may name a server provider, which this SQLite connection
+# string would contradict, and may disable automatic migration, which this gate depends on.
+env "ASPNETCORE_ENVIRONMENT=Production" "Deployment__EnforceStartupChecks=false" "Database__Provider=Sqlite" "Database__AutoMigrateEmpty=true" "ConnectionStrings__DefaultConnection=Data Source=$VERIFY_TEMP/empty.db;Cache=Shared" "FileStorage__RootPath=$VERIFY_TEMP/files" \
   dotnet run --no-build --no-launch-profile --urls "$VERIFY_URL" >"$VERIFY_TEMP/app.log" 2>&1 &
 VERIFY_PID="$!"
 READY="false"
