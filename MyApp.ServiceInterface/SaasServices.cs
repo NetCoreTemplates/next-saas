@@ -14,6 +14,13 @@ namespace MyApp.ServiceInterface;
 
 public record StripeWebhookEnvelope(string EventId, string EventType, string PayloadJson);
 
+public static class PlanAudiencePolicy
+{
+    public static bool Allows(PlanAudience audience, WorkspaceKind kind) => audience == PlanAudience.Both ||
+        (audience == PlanAudience.Individual && kind == WorkspaceKind.Individual) ||
+        (audience == PlanAudience.Business && kind == WorkspaceKind.Business);
+}
+
 public static class WorkspaceInvitationTokens
 {
     public static string Create()
@@ -64,6 +71,7 @@ public interface ISaasManager
     UsageSummary ReleaseUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription, string userId, string reservationId);
     UsageSummary AdjustGauge(IDbConnection db, Workspace workspace, BillingSubscription subscription, string userId, string meterKey, long delta, string idempotencyKey, string source);
     SaasPlanDetails GetPlanDetails(IDbConnection db, string planId);
+    SaasPlanDetails EnsurePlanDraftForStripeCatalog(IDbConnection db, string actorId, string planId);
     SaasPlanDetails SavePlanDraft(IDbConnection db, string actorId, SaveSaasPlanDraft request);
     SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string actorId, string planId, ProvisionSaasPlanStripeCatalogResponse result);
     SaasPlanDetails PublishPlanDraft(IDbConnection db, string actorId, string planId);
@@ -112,7 +120,7 @@ public class SaasManager(SaasConfig config) : ISaasManager
 
             var now = DateTime.UtcNow;
             var workspace = new Workspace {
-                Name = name, Slug = slug, BillingEmail = email,
+                Name = name, Slug = slug, BillingEmail = email, Kind = WorkspaceKind.Individual,
                 CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
             };
             var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -178,7 +186,7 @@ public class SaasManager(SaasConfig config) : ISaasManager
             ?? throw new HttpError(404, "DefaultPlanVersionNotFound", $"Plan '{config.DefaultPlan}' has no published version.");
         var now = DateTime.UtcNow;
         var workspace = new Workspace {
-            Name = normalizedName, Slug = slug, BillingEmail = billingEmail?.Trim(),
+            Name = normalizedName, Slug = slug, BillingEmail = billingEmail?.Trim(), Kind = WorkspaceKind.Business,
             CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
         };
         var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -261,6 +269,7 @@ public class SaasManager(SaasConfig config) : ISaasManager
         return new PlanInfo {
             Id = version.Id, Code = plan.Code, Name = version.Name ?? plan.Name,
             Description = version.Description ?? plan.Description,
+            Audience = version.Audience ?? plan.Audience,
             IsContactSales = version.IsContactSales ?? plan.IsContactSales, TrialDays = version.TrialDays,
             Features = features.Select(x => x.Name).ToList(),
             Quotas = quotas.Select(x => new PlanQuotaInfo {
@@ -534,6 +543,7 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         plan.IsPublic = version.IsPublic ?? plan.IsPublic;
         plan.IsContactSales = version.IsContactSales ?? plan.IsContactSales;
         plan.IsArchived = version.IsArchived ?? plan.IsArchived;
+        plan.Audience = version.Audience ?? plan.Audience;
         var versionIds = new HashSet<string>(versions.Select(x => x.Id));
         var activeSubscriptions = db.Select<BillingSubscription>(x => x.Status != SubscriptionStatus.Canceled)
             .LongCount(x => versionIds.Contains(x.PlanVersionId));
@@ -550,6 +560,38 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
             Quotas = db.Select<SaasPlanQuota>(x => x.PlanVersionId == version.Id)
                 .OrderBy(x => x.DisplayName).ToList(),
         };
+    }
+
+    public SaasPlanDetails EnsurePlanDraftForStripeCatalog(IDbConnection db, string actorId, string planId)
+    {
+        var details = GetPlanDetails(db, planId);
+        if (details.HasDraft) return details;
+        var plan = details.Plan;
+        var version = details.Version;
+        return SavePlanDraft(db, actorId, new SaveSaasPlanDraft {
+            PlanId = planId,
+            Name = plan.Name,
+            Description = plan.Description,
+            DisplayOrder = plan.DisplayOrder,
+            IsPublic = plan.IsPublic,
+            IsContactSales = plan.IsContactSales,
+            IsArchived = plan.IsArchived,
+            Audience = version.Audience ?? plan.Audience,
+            TrialDays = version.TrialDays,
+            Prices = details.Prices.Select(x => new SavePlanPrice {
+                Currency = x.Currency, Interval = x.Interval, UnitAmount = x.UnitAmount,
+                StripePriceId = x.StripePriceId, IsActive = x.IsActive,
+            }).ToList(),
+            Features = details.Features.Select(x => new SavePlanFeature {
+                Key = x.Key, Name = x.Name, Description = x.Description,
+                Enabled = x.Enabled, DisplayOrder = x.DisplayOrder,
+            }).ToList(),
+            Quotas = details.Quotas.Select(x => new SavePlanQuota {
+                MeterKey = x.MeterKey, DisplayName = x.DisplayName,
+                IncludedUnits = x.IncludedUnits, Enforcement = x.Enforcement,
+                RolloverEnabled = x.RolloverEnabled,
+            }).ToList(),
+        });
     }
 
     public SaasPlanDetails SavePlanDraft(IDbConnection db, string actorId, SaveSaasPlanDraft request)
@@ -580,6 +622,7 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         draft.IsPublic = request.IsPublic;
         draft.IsContactSales = request.IsContactSales;
         draft.IsArchived = request.IsArchived;
+        draft.Audience = request.Audience;
         draft.TrialDays = request.TrialDays is > 0 ? request.TrialDays : null;
         draft.EffectiveFrom = null;
         draft.PublishedDate = null;
@@ -652,6 +695,7 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         plan.IsPublic = draft.IsPublic ?? plan.IsPublic;
         plan.IsContactSales = draft.IsContactSales ?? plan.IsContactSales;
         plan.IsArchived = draft.IsArchived ?? plan.IsArchived;
+        plan.Audience = draft.Audience ?? plan.Audience;
         plan.ModifiedDate = now;
         plan.ModifiedBy = actorId;
         db.Update(plan);
@@ -725,6 +769,8 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
             throw new HttpError(400, "PlanDetailsRequired", "Plan name and description are required.");
         if (request.DisplayOrder < 0)
             throw new HttpError(400, "InvalidDisplayOrder", "Display order cannot be negative.");
+        if (!Enum.IsDefined(request.Audience))
+            throw new HttpError(400, "InvalidPlanAudience", "Choose Individual, Business, or Both for this plan.");
         if (request.TrialDays != null && request.TrialDays is < 1 or > 365)
             throw new HttpError(400, "InvalidTrialDays", "An enabled trial must be between 1 and 365 days.");
         if (!config.EnableTrials && request.TrialDays != null)
@@ -1104,6 +1150,8 @@ public class SaasServices(
         var context = workspaceContexts.Resolve(Db, session, Request);
         var workspace = context.Workspace;
         AssertWorkspaceAdmin(context);
+        if (workspace.Kind == WorkspaceKind.Individual)
+            throw new HttpError(409, "IndividualAccountHasNoTeam", "Individual accounts cannot invite team members. Create a business organization instead.");
         if (request.Role == WorkspaceMemberRole.Owner)
             throw new HttpError(409, "OwnershipTransferRequired", "Invite the member first, then use the ownership transfer workflow.");
         var email = request.Email.Trim().ToLowerInvariant();
@@ -1180,6 +1228,10 @@ public class SaasServices(
         var tokenHash = WorkspaceInvitationTokens.Hash(request.Token.Trim());
         var member = Db.Single<WorkspaceMember>(x => x.InvitationTokenHash == tokenHash)
             ?? throw new HttpError(404, "InvitationNotFound", "This invitation is invalid or has already been used.");
+        var invitedWorkspace = Db.SingleById<Workspace>(member.WorkspaceId)
+            ?? throw new HttpError(404, "WorkspaceNotFound", "The invited organization was not found.");
+        if (invitedWorkspace.Kind == WorkspaceKind.Individual)
+            throw new HttpError(409, "IndividualAccountHasNoTeam", "Individual accounts cannot accept team members.");
         var now = DateTime.UtcNow;
         var sessionEmail = (session.Email ?? session.UserName)?.Trim().ToLowerInvariant();
         WorkspaceInvitationTokens.AssertCanAccept(member, sessionEmail, now);
@@ -1282,6 +1334,8 @@ public class SaasServices(
             ?? throw new HttpError(404, "PlanNotFound", "The selected plan was not found.");
         if (!price.IsActive || version.Status != PlanVersionStatus.Published || plan.IsArchived || !plan.IsPublic || plan.IsContactSales)
             throw new HttpError(409, "PlanNotAvailable", "This plan is not available for self-serve checkout.");
+        if (!PlanAudiencePolicy.Allows(version.Audience ?? plan.Audience, workspace.Kind))
+            throw new HttpError(409, "PlanAudienceMismatch", "This plan is not available for this account type.");
         if (price.StripePriceId.IsNullOrEmpty())
             throw new HttpError(503, "StripePriceNotConfigured", "Add the Stripe Price ID in the SaaS administration area before starting checkout.");
         var url = await stripe.CreateCheckoutAsync(workspace, price,
@@ -1384,8 +1438,6 @@ public class SaasServices(
         var plan = Db.SingleById<SaasPlan>(request.PlanId)
             ?? throw new HttpError(404, "PlanNotFound", "The selected plan was not found.");
         var draft = manager.GetPlanDetails(Db, plan.Id);
-        if (!draft.HasDraft)
-            throw new HttpError(409, "PlanDraftNotFound", "Save a draft before provisioning its Stripe catalog.");
         var prices = draft.Prices.Select(x => new SavePlanPrice {
             Currency = x.Currency, Interval = x.Interval, UnitAmount = x.UnitAmount,
             StripePriceId = x.StripePriceId, IsActive = x.IsActive,
@@ -1398,6 +1450,13 @@ public class SaasServices(
         if (candidates.GroupBy(x => $"{x.Currency.Trim().ToLowerInvariant()}:{x.Interval}").Any(x => x.Count() > 1))
             throw new HttpError(409, "DuplicateStripePrice", "Only one active price can be provisioned for each currency and billing interval.");
 
+        if (!stripe.IsCatalogProvisioningEnabled)
+            throw new HttpError(409, "StripeCatalogProvisioningDisabled", "Stripe catalog provisioning is not enabled for this environment.");
+        draft = manager.EnsurePlanDraftForStripeCatalog(Db, session.UserAuthId!, plan.Id);
+        prices = draft.Prices.Select(x => new SavePlanPrice {
+            Currency = x.Currency, Interval = x.Interval, UnitAmount = x.UnitAmount,
+            StripePriceId = x.StripePriceId, IsActive = x.IsActive,
+        }).ToList();
         var result = await stripe.ProvisionCatalogAsync(plan, draft.Plan.Name, draft.Plan.Description, prices);
         result.Draft = manager.SaveStripeCatalogProvisioning(Db, session.UserAuthId!, plan.Id, result);
         return result;

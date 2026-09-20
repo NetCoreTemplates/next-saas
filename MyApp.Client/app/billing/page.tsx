@@ -6,7 +6,7 @@ import { ArrowRight, CalendarDays, CheckCircle2, CreditCard, ExternalLink, Loade
 import { useEffect, useRef, useState } from 'react'
 import AppShell, { PageHeading, Panel, StatusPill } from '@/components/app-shell'
 import { ValidateAuth } from '@/lib/auth'
-import { ConfirmCheckoutSession, CreateCustomerPortalSession } from '@/lib/dtos'
+import { ConfirmCheckoutSession, CreateCustomerPortalSession, WorkspaceKind } from '@/lib/dtos'
 import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
 
 type CheckoutState = 'idle' | 'confirming' | 'confirmed' | 'error'
@@ -55,7 +55,7 @@ function BillingPage() {
     <PageHeading
       eyebrow="Commercial relationship"
       title="Plans & billing"
-      description="Manage your organization’s plan. Stripe securely handles payment details, invoices, credits, and tax."
+      description={`Manage your ${data?.workspace?.kind === WorkspaceKind.Individual ? 'account' : 'organization'} plan. Stripe securely handles payment details, invoices, credits, and tax.`}
       action={<button onClick={portal} disabled={busy} className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50 dark:border-white/15 dark:bg-white/5">
         Open billing portal <ExternalLink className="h-4 w-4" />
       </button>}

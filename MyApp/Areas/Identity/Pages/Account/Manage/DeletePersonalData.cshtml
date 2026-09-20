@@ -7,13 +7,13 @@
 
 <h3 class="@Css.H3">@ViewData["Title"]</h3>
 
-@await Html.PartialAsync("AlertError", "Deleting this data permanently removes your personal account, memberships, API keys, and notification history. It does not delete organizations or their shared data.")
+@await Html.PartialAsync("AlertError", "Deleting this data removes your personal account, memberships, API keys, and notification history. An eligible individual workspace is scheduled for deletion; business organizations and shared data are not deleted with your account.")
 
 @if (Model.OwnedOrganizations.Count > 0)
 {
     <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
-        <p class="font-semibold">You still own @(Model.OwnedOrganizations.Count == 1 ? "an organization" : "organizations").</p>
-        <p class="mt-1">Transfer ownership to another member or delete the organization first:</p>
+        <p class="font-semibold">These owned accounts need attention before account deletion.</p>
+        <p class="mt-1">Transfer or delete a business organization, or cancel paid billing and resolve any legal hold on an individual account:</p>
         <ul class="mt-2 list-disc pl-5">
             @foreach (var organization in Model.OwnedOrganizations)
             {

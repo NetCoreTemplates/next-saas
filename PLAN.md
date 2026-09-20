@@ -165,9 +165,10 @@ Precedence for effective access is:
 | Decision | Default | Configurable at |
 | --- | --- | --- |
 | Billing owner | Workspace | Architectural invariant |
-| Individual customers | Automatic personal workspace | JSON enable/disable |
+| Individual customers | Explicit Individual signup with a private one-owner workspace | JSON enable/disable |
+| Business customers | Explicit Business signup with an organization name, team roles, and invitations | Domain policy |
 | Team model | Owner, Admin, Billing, Member | JSON role policy; membership in RDBMS |
-| Public tiers | Free, Pro, Business; Enterprise is contact-sales | RDBMS Admin UI |
+| Public tiers | Shared Free; Individual Personal; Business Pro, Business, and contact-sales Enterprise | RDBMS Admin UI |
 | Billing intervals | Monthly primary; annual supported | JSON capability; RDBMS Price mappings |
 | Free access | Enabled with useful but bounded quotas | JSON capability; RDBMS limits |
 | Trial | 14 days on seeded paid self-serve plans; independently switchable | JSON default; plan version in RDBMS Admin UI |
@@ -682,7 +683,7 @@ Exit criterion: the renamed empty SaaS shell builds and its smoke test passes wi
 ### Milestone 1 — Workspace foundation
 
 - workspace/member migrations and services;
-- automatic personal workspace on registration;
+- Individual workspace or named Business organization on registration;
 - active-workspace resolution;
 - membership authorization;
 - customer dashboard shell and team management;
@@ -693,7 +694,7 @@ Exit criterion: individual and team access are isolated and covered by integrati
 ### Milestone 2 — Plan catalog and Admin UI
 
 - plan/version/price/feature/quota schema;
-- deterministic Free, Pro, and Business seed data;
+- deterministic Free, Personal, Pro, Business, and Enterprise seed data;
 - draft, validation, publication, retirement, and migration services;
 - plan and quota Admin UI;
 - public pricing API and page.
@@ -1358,7 +1359,7 @@ Every log and metric carries server-verified workspace context when tenant-scope
 
 Before declaring the post-foundation roadmap complete, automate these representative flows:
 
-1. **Free signup:** register, receive a personal workspace, inspect entitlements and quotas, upload within limits, and view analytics.
+1. **Free signup:** register as Individual or Business, receive the matching workspace, inspect entitlements and quotas, upload within limits, and view analytics.
 2. **Quota enforcement:** fill document or byte capacity, observe warning and rejection, delete a file, and regain capacity.
 3. **Paid conversion:** start trial/Checkout, process duplicate and out-of-order webhooks, receive paid entitlements, and retain an audit trail.
 4. **Delinquency and recovery:** simulate payment failure, enter grace, restrict access after grace, recover payment, and restore access without data loss.

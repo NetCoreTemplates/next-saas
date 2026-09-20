@@ -57,6 +57,13 @@ public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSen
     {
         var emailNotSetup = emailSender is IdentityNoOpEmailSender;
         var authCtx = AuthContext;
+        var accountKind = request.Meta?.GetValueOrDefault("accountKind") ?? "Individual";
+        if (!Enum.TryParse<WorkspaceKind>(accountKind, true, out var workspaceKind) || !Enum.IsDefined(workspaceKind))
+            throw new HttpError(400, "InvalidAccountKind", "Choose an Individual or Business account.");
+        var organizationName = request.Meta?.GetValueOrDefault("organizationName")?.Trim();
+        if (saasConfig.EnablePersonalWorkspaces && workspaceKind == WorkspaceKind.Business &&
+            (organizationName is null || organizationName.Length is < 2 or > 100))
+            throw new HttpError(400, "OrganizationNameRequired", "Business accounts need an organization name between 2 and 100 characters.");
         
         var newUser = request.ConvertTo<ApplicationUser>();
         newUser.UserName ??= newUser.Email;
@@ -77,7 +84,12 @@ public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSen
         // explicitly accept the signed, unexpired invitation after authenticating as
         // the invited email address.
         if (saasConfig.EnablePersonalWorkspaces)
-            saasManager.EnsurePersonalWorkspace(Db, userId, newUser.DisplayName, newUser.Email);
+        {
+            if (workspaceKind == WorkspaceKind.Business)
+                saasManager.CreateOrganization(Db, userId, organizationName!, newUser.Email);
+            else
+                saasManager.EnsurePersonalWorkspace(Db, userId, newUser.DisplayName, newUser.Email);
+        }
 
         var returnUrl = SafeReturnUrl(request.Meta?.GetValueOrDefault("returnUrl"));
         var code = await UserManager.GenerateEmailConfirmationTokenAsync(newUser);

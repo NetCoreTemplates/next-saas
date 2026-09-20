@@ -89,7 +89,7 @@ namespace MyApp.Areas.Identity.Pages.Account.Manage
             if (OwnedOrganizations.Count > 0)
             {
                 ModelState.AddModelError(string.Empty,
-                    "Transfer ownership or delete every organization you own before deleting your account.");
+                    "Resolve the listed business organizations or individual account billing/retention conditions before deleting your account.");
                 return Page();
             }
             if (RequirePassword)

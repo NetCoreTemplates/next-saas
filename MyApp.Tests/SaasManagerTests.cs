@@ -9,6 +9,19 @@ namespace MyApp.Tests;
 public class SaasManagerTests
 {
     [Test]
+    public void Plan_audience_is_enforced_for_each_account_kind()
+    {
+        Assert.Multiple(() => {
+            Assert.That(PlanAudiencePolicy.Allows(PlanAudience.Both, WorkspaceKind.Individual), Is.True);
+            Assert.That(PlanAudiencePolicy.Allows(PlanAudience.Both, WorkspaceKind.Business), Is.True);
+            Assert.That(PlanAudiencePolicy.Allows(PlanAudience.Individual, WorkspaceKind.Individual), Is.True);
+            Assert.That(PlanAudiencePolicy.Allows(PlanAudience.Individual, WorkspaceKind.Business), Is.False);
+            Assert.That(PlanAudiencePolicy.Allows(PlanAudience.Business, WorkspaceKind.Business), Is.True);
+            Assert.That(PlanAudiencePolicy.Allows(PlanAudience.Business, WorkspaceKind.Individual), Is.False);
+        });
+    }
+
+    [Test]
     public void Usage_is_idempotent_and_hard_quota_is_enforced()
     {
         var factory = new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider);
@@ -35,6 +48,7 @@ public class SaasManagerTests
 
         var manager = new SaasManager(new SaasConfig());
         var workspace = manager.EnsurePersonalWorkspace(db, "user-1", "Ada", "ada@example.com");
+        Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Individual));
         var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
 
         var first = manager.RecordUsage(db, workspace, subscription, "user-1", new RecordUsage { MeterKey="api.requests", Units=900, IdempotencyKey="operation-1" });
@@ -75,6 +89,52 @@ public class SaasManagerTests
             Assert.That(rolled.Allowance, Is.EqualTo(2_999));
             Assert.That(rolled.PeriodEnd, Is.GreaterThan(DateTime.UtcNow));
             Assert.That(db.Count<UsageEvent>(), Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void Stripe_catalog_provisioning_creates_a_draft_from_a_published_plan_once()
+    {
+        var factory = new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider);
+        using var db = factory.Open();
+        db.CreateTable<SaasPlan>();
+        db.CreateTable<SaasPlanVersion>();
+        db.CreateTable<SaasPlanPrice>();
+        db.CreateTable<SaasPlanFeature>();
+        db.CreateTable<SaasPlanQuota>();
+        db.CreateTable<BillingSubscription>();
+        db.CreateTable<SaasAuditEvent>();
+
+        var now = DateTime.UtcNow;
+        db.Insert(new SaasPlan { Id = "plan.pro", Code = "pro", Name = "Pro", Description = "For teams", Audience = PlanAudience.Business,
+            DisplayOrder = 2, IsPublic = true, CreatedDate = now, ModifiedDate = now });
+        db.Insert(new SaasPlanVersion { Id = "plan.pro.v1", PlanId = "plan.pro", Version = 1, Status = PlanVersionStatus.Published,
+            Name = "Pro", Description = "For teams", Audience = PlanAudience.Business, TrialDays = 14,
+            CreatedDate = now, ModifiedDate = now });
+        db.Insert(new SaasPlanPrice { PlanVersionId = "plan.pro.v1", Currency = "usd", Interval = BillingInterval.Month,
+            UnitAmount = 4_900, IsActive = true, CreatedDate = now, ModifiedDate = now });
+        db.Insert(new SaasPlanFeature { PlanVersionId = "plan.pro.v1", Key = "analytics.advanced", Name = "Analytics",
+            Enabled = true, CreatedDate = now, ModifiedDate = now });
+        db.Insert(new SaasPlanQuota { PlanVersionId = "plan.pro.v1", MeterKey = "api.requests", DisplayName = "API requests",
+            IncludedUnits = 50_000, Enforcement = QuotaEnforcement.HardLimit, CreatedDate = now, ModifiedDate = now });
+
+        var manager = new SaasManager(new SaasConfig());
+        var draft = manager.EnsurePlanDraftForStripeCatalog(db, "admin-1", "plan.pro");
+        var repeated = manager.EnsurePlanDraftForStripeCatalog(db, "admin-1", "plan.pro");
+
+        Assert.Multiple(() => {
+            Assert.That(draft.HasDraft, Is.True);
+            Assert.That(draft.Version.Version, Is.EqualTo(2));
+            Assert.That(draft.Version.Status, Is.EqualTo(PlanVersionStatus.Draft));
+            Assert.That(draft.Version.Audience, Is.EqualTo(PlanAudience.Business));
+            Assert.That(draft.Version.TrialDays, Is.EqualTo(14));
+            Assert.That(draft.Prices.Single().UnitAmount, Is.EqualTo(4_900));
+            Assert.That(draft.Features.Single().Key, Is.EqualTo("analytics.advanced"));
+            Assert.That(draft.Quotas.Single().IncludedUnits, Is.EqualTo(50_000));
+            Assert.That(repeated.Version.Id, Is.EqualTo(draft.Version.Id));
+            Assert.That(db.Count<SaasPlanVersion>(), Is.EqualTo(2));
+            Assert.That(db.SingleById<SaasPlanVersion>("plan.pro.v1")!.Status, Is.EqualTo(PlanVersionStatus.Published));
+            Assert.That(db.Count<SaasAuditEvent>(x => x.Action == "draft.saved"), Is.EqualTo(1));
         });
     }
 

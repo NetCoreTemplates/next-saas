@@ -9,7 +9,7 @@ Then global identity and policy:
 
 1. Update `Product`, `FileStorage`, `Notifications`, and `Saas` in `MyApp/appsettings.json`.
 2. Replace Acme logo treatment and CSS tokens in the shared layouts.
-3. Change seed plans in `MyApp/Migrations/Migration1001.cs`; during template development you may reset the local database with `ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes` and rerun migration.
+3. Change seed plans and their `Audience` (`Both`, `Individual`, or `Business`) in `MyApp/plans.json`; during template development you may reset the local database with `ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes` and rerun migration. The reset destroys local data.
 4. Keep feature and meter keys stable once customers or usage exist.
 5. Regenerate `MyApp.Client/lib/dtos.ts` after C# contract changes.
 6. Run `./scripts/verify.sh`.

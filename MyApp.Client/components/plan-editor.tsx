@@ -24,6 +24,7 @@ import { client } from '@/lib/gateway'
 import {
   BillingInterval,
   GetSaasPlanDetails,
+  PlanAudience,
   PlanVersionStatus,
   ProvisionSaasPlanStripeCatalog,
   PublishSaasPlanDraft,
@@ -51,6 +52,7 @@ type EditorState = {
   isPublic: boolean
   isContactSales: boolean
   isArchived: boolean
+  audience: PlanAudience
   prices: PriceRow[]
   features: FeatureRow[]
   quotas: QuotaRow[]
@@ -71,6 +73,7 @@ function toEditor(details: SaasPlanDetails, defaultTrialDays: number): EditorSta
     isPublic: details.plan?.isPublic ?? true,
     isContactSales: details.plan?.isContactSales ?? false,
     isArchived: details.plan?.isArchived ?? false,
+    audience: details.version?.audience ?? details.plan?.audience ?? PlanAudience.Both,
     prices: (details.prices ?? []).map(x => ({
       id: x.id ?? newId(), currency: x.currency ?? 'usd', interval: x.interval ?? BillingInterval.Month,
       unitAmount: String(x.unitAmount ?? 0), stripePriceId: x.stripePriceId ?? '', isActive: x.isActive ?? true,
@@ -84,6 +87,32 @@ function toEditor(details: SaasPlanDetails, defaultTrialDays: number): EditorSta
       enforcement: x.enforcement ?? QuotaEnforcement.HardLimit, rolloverEnabled: x.rolloverEnabled ?? false,
     })),
   }
+}
+
+function toDraftRequest(planId: string, editor: EditorState, trialsEnabled: boolean) {
+  return new SaveSaasPlanDraft({
+    planId,
+    name: editor.name,
+    description: editor.description,
+    displayOrder: Number(editor.displayOrder),
+    isPublic: editor.isPublic,
+    isContactSales: editor.isContactSales,
+    isArchived: editor.isArchived,
+    audience: editor.audience,
+    trialDays: trialsEnabled && editor.trialEnabled ? Number(editor.trialDays) : undefined,
+    prices: editor.prices.map(x => new SavePlanPrice({
+      currency: x.currency, interval: x.interval, unitAmount: Number(x.unitAmount),
+      stripePriceId: x.stripePriceId || undefined, isActive: x.isActive,
+    })),
+    features: editor.features.map((x, index) => new SavePlanFeature({
+      key: x.key, name: x.name, description: x.description || undefined, enabled: x.enabled, displayOrder: index,
+    })),
+    quotas: editor.quotas.map(x => new SavePlanQuota({
+      meterKey: x.meterKey, displayName: x.displayName,
+      includedUnits: x.includedUnits === '' ? undefined : Number(x.includedUnits),
+      enforcement: x.enforcement, rolloverEnabled: x.rolloverEnabled,
+    })),
+  })
 }
 
 function Toggle({ checked, onChange, label, description, icon: Icon, disabled = false }: {
@@ -167,28 +196,7 @@ export function PlanEditor({ plans, versions, trialsEnabled, trialRequiresPaymen
     if (!details?.plan?.id || !editor) return
     setBusy('save')
     setNotice(undefined)
-    const api = await client.api(new SaveSaasPlanDraft({
-      planId: details.plan.id,
-      name: editor.name,
-      description: editor.description,
-      displayOrder: Number(editor.displayOrder),
-      isPublic: editor.isPublic,
-      isContactSales: editor.isContactSales,
-      isArchived: editor.isArchived,
-      trialDays: trialsEnabled && editor.trialEnabled ? Number(editor.trialDays) : undefined,
-      prices: editor.prices.map(x => new SavePlanPrice({
-        currency: x.currency, interval: x.interval, unitAmount: Number(x.unitAmount),
-        stripePriceId: x.stripePriceId || undefined, isActive: x.isActive,
-      })),
-      features: editor.features.map((x, index) => new SavePlanFeature({
-        key: x.key, name: x.name, description: x.description || undefined, enabled: x.enabled, displayOrder: index,
-      })),
-      quotas: editor.quotas.map(x => new SavePlanQuota({
-        meterKey: x.meterKey, displayName: x.displayName,
-        includedUnits: x.includedUnits === '' ? undefined : Number(x.includedUnits),
-        enforcement: x.enforcement, rolloverEnabled: x.rolloverEnabled,
-      })),
-    }))
+    const api = await client.api(toDraftRequest(details.plan.id, editor, trialsEnabled))
     if (api.succeeded && api.response) {
       setDetails(api.response)
       setEditor(toEditor(api.response, defaultTrialDays))
@@ -231,15 +239,31 @@ export function PlanEditor({ plans, versions, trialsEnabled, trialRequiresPaymen
   }
 
   const provisionStripe = async () => {
-    if (!details?.plan?.id || !editor || dirty || !stripeCatalogProvisioningEnabled) return
+    if (!details?.plan?.id || !editor || !stripeCatalogProvisioningEnabled) return
     const missing = editor.prices.filter(x => x.isActive && Number(x.unitAmount) > 0 && !x.stripePriceId)
     if (missing.length === 0) {
       setNotice({ tone: 'success', text: 'Every positive active price is already mapped to Stripe.' })
       return
     }
-    if (!window.confirm(`Create ${missing.length} missing recurring price${missing.length === 1 ? '' : 's'} in the configured Stripe ${stripeMode.toLowerCase()}? Stripe price amounts cannot be edited after creation.`)) return
+    const saveFirst = dirty || !details.hasDraft
+    if (!window.confirm(`${saveFirst ? 'Save the current plan as a draft, then ' : ''}create ${missing.length} missing recurring price${missing.length === 1 ? '' : 's'} in the configured Stripe ${stripeMode.toLowerCase()}? Stripe price amounts cannot be edited after creation.`)) return
     setBusy('stripe')
     setNotice(undefined)
+    if (saveFirst) {
+      const draftApi = await client.api(toDraftRequest(details.plan.id, editor, trialsEnabled))
+      if (!draftApi.succeeded || !draftApi.response) {
+        setNotice({ tone: 'error', text: draftApi.error?.message ?? 'Unable to save a draft before Stripe provisioning.' })
+        setBusy(undefined)
+        return
+      }
+      setDetails(draftApi.response)
+      setEditor(toEditor(draftApi.response, defaultTrialDays))
+      setDirty(false)
+      if (draftApi.response.version) {
+        const savedVersion = draftApi.response.version
+        setCatalogVersions(current => [...current.filter(x => x.id !== savedVersion.id), savedVersion])
+      }
+    }
     const api = await client.api(new ProvisionSaasPlanStripeCatalog({
       planId: details.plan.id,
     }))
@@ -314,10 +338,10 @@ export function PlanEditor({ plans, versions, trialsEnabled, trialRequiresPaymen
             {tab === 'catalog' && <div className="mx-auto max-w-4xl space-y-7">
               <section><div className="mb-4"><h3 className="text-sm font-semibold">Customer-facing details</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">These fields appear in pricing, billing, and organization views.</p></div><div className="grid gap-5 md:grid-cols-[1fr_140px]"><label className={labelClass}>Plan name<input required value={editor.name} onChange={e => update(x => ({ ...x, name: e.target.value }))} className={fieldClass}/></label><label className={labelClass}>Display order<input required type="number" min="0" value={editor.displayOrder} onChange={e => update(x => ({ ...x, displayOrder: e.target.value }))} className={fieldClass}/></label></div><label className={`${labelClass} mt-5`}>Description<textarea required rows={4} value={editor.description} onChange={e => update(x => ({ ...x, description: e.target.value }))} className={fieldClass}/></label><label className={`${labelClass} mt-5 max-w-md`}>Stable plan code<input readOnly value={details.plan!.code ?? ''} className={`${fieldClass} cursor-not-allowed bg-slate-50 font-mono text-slate-400 dark:bg-white/[.02]`}/><span className="mt-2 block text-[11px] font-normal leading-4 text-slate-400">Codes are immutable because integrations may depend on them.</span></label></section>
               <section className="border-t border-slate-200 pt-7 dark:border-white/10"><h3 className="text-sm font-semibold">Trial offer</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Give new subscriptions time to evaluate this plan before Stripe collects the first payment.</p><div className="mt-4 grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_180px]"><Toggle checked={trialsEnabled && editor.trialEnabled} disabled={!trialsEnabled} onChange={value => update(x => ({ ...x, trialEnabled: value, trialDays: value && !x.trialDays ? String(defaultTrialDays) : x.trialDays }))} label={trialsEnabled ? 'Free trial' : 'Trials disabled globally'} description={trialsEnabled ? `Apply this trial to every new subscription. ${trialRequiresPaymentMethod ? 'Stripe will collect a payment method at signup.' : 'No payment method is required; trials without one cancel at expiry.'}` : 'Enable Saas.EnableTrials in appsettings.json before adding plan trials.'} icon={Sparkles}/>{trialsEnabled && editor.trialEnabled && <label className={labelClass}>Trial length (days)<input required type="number" min="1" max="365" value={editor.trialDays} onChange={e => update(x => ({ ...x, trialDays: e.target.value }))} className={fieldClass}/><span className="mt-2 block text-[11px] font-normal leading-4 text-slate-400">The deployment default is {defaultTrialDays} days.</span></label>}</div></section>
-              <section className="border-t border-slate-200 pt-7 dark:border-white/10"><h3 className="text-sm font-semibold">Availability</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Control how customers discover and buy this plan.</p><div className="mt-4 grid gap-3 md:grid-cols-2"><Toggle checked={editor.isPublic} onChange={value => update(x => ({ ...x, isPublic: value }))} label="Public plan" description="Show this plan on the pricing page." icon={editor.isPublic ? Eye : EyeOff}/><Toggle checked={editor.isContactSales} onChange={value => update(x => ({ ...x, isContactSales: value }))} label="Sales-assisted" description="Replace self-serve checkout with contact sales." icon={Users}/><Toggle checked={editor.isArchived} onChange={value => update(x => ({ ...x, isArchived: value }))} label="Archived" description="Hide this plan from all new customers." icon={Archive}/></div></section>
+              <section className="border-t border-slate-200 pt-7 dark:border-white/10"><h3 className="text-sm font-semibold">Availability</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Control who can discover and buy this plan.</p><label className={`${labelClass} mt-4 max-w-sm`}>Account type<select value={editor.audience} onChange={e => update(x => ({ ...x, audience: e.target.value as PlanAudience }))} className={fieldClass}><option value={PlanAudience.Both}>Personal and Business</option><option value={PlanAudience.Individual}>Personal only</option><option value={PlanAudience.Business}>Business only</option></select></label><div className="mt-4 grid gap-3 md:grid-cols-2"><Toggle checked={editor.isPublic} onChange={value => update(x => ({ ...x, isPublic: value }))} label="Public plan" description="Show this plan on the pricing page." icon={editor.isPublic ? Eye : EyeOff}/><Toggle checked={editor.isContactSales} onChange={value => update(x => ({ ...x, isContactSales: value }))} label="Sales-assisted" description="Replace self-serve checkout with contact sales." icon={Users}/><Toggle checked={editor.isArchived} onChange={value => update(x => ({ ...x, isArchived: value }))} label="Archived" description="Hide this plan from all new customers." icon={Archive}/></div></section>
             </div>}
 
-            {tab === 'pricing' && <div className="mx-auto max-w-5xl"><div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold">Prices & Stripe mapping</h3><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stripeConfigured ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300'}`}>Stripe {stripeMode}</span></div><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Amounts use Stripe minor units: 4900 means $49.00 USD. Provisioning creates missing recurring Prices and fills their IDs automatically.</p></div><div className="flex shrink-0 flex-wrap gap-2"><button type="button" onClick={provisionStripe} disabled={!stripeCatalogProvisioningEnabled || dirty || !!busy || !editor.prices.some(x => x.isActive && Number(x.unitAmount) > 0 && !x.stripePriceId)} title={!stripeConfigured ? 'Set Stripe__SecretKey and restart the application' : dirty ? 'Save or discard local edits before creating Stripe objects' : !stripeCatalogProvisioningEnabled ? 'Catalog provisioning is disabled by Stripe configuration' : undefined} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-[#0b5cff] shadow-sm transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-blue-400/20 dark:bg-white/5 dark:hover:bg-blue-400/10"><Cloud className="h-3.5 w-3.5"/>{busy === 'stripe' ? 'Creating…' : 'Create missing in Stripe'}</button><button type="button" onClick={() => update(x => ({ ...x, prices: [...x.prices, { id: newId(), currency: 'usd', interval: BillingInterval.Month, unitAmount: '0', stripePriceId: '', isActive: true }] }))} className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-[#0b5cff] dark:bg-blue-400/10"><Plus className="h-3.5 w-3.5"/>Add price</button></div></div>{editor.prices.length === 0 ? <EmptyState icon={BadgeDollarSign} title="No prices configured" body="Contact-sales plans may omit prices. Self-serve plans need at least one active monthly price." action={<button type="button" onClick={() => update(x => ({ ...x, prices: [{ id: newId(), currency: 'usd', interval: BillingInterval.Month, unitAmount: '0', stripePriceId: '', isActive: true }] }))} className="text-xs font-semibold text-[#0b5cff]">Add the first price →</button>}/> : <div className="space-y-3">{editor.prices.map((price, index) => <div key={price.id} className="grid items-end gap-3 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-white/10 dark:bg-white/[.02] lg:grid-cols-[90px_120px_140px_minmax(180px,1fr)_auto_auto]"><label className={labelClass}>Currency<input required maxLength={3} value={price.currency} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, currency: e.target.value.toLowerCase() } : row) }))} className={`${fieldClass} font-mono uppercase`}/></label><label className={labelClass}>Interval<select value={price.interval} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, interval: e.target.value as BillingInterval } : row) }))} className={fieldClass}><option value={BillingInterval.Month}>Monthly</option><option value={BillingInterval.Year}>Annual</option></select></label><label className={labelClass}>Minor units<input required type="number" min="0" value={price.unitAmount} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, unitAmount: e.target.value } : row) }))} className={fieldClass}/></label><label className={labelClass}>Stripe Price ID<input placeholder="Created automatically or paste price_…" value={price.stripePriceId} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, stripePriceId: e.target.value } : row) }))} className={`${fieldClass} font-mono`}/></label><label className="flex h-[42px] items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={price.isActive} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, isActive: e.target.checked } : row) }))} className="rounded border-slate-300 text-[#0b5cff] focus:ring-[#0b5cff]"/>Active</label><button type="button" title="Remove price" onClick={() => update(x => ({ ...x, prices: x.prices.filter((_, i) => i !== index) }))} className="grid h-[42px] w-[42px] place-items-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-400/10"><Trash2 className="h-4 w-4"/></button></div>)}</div>}</div>}
+            {tab === 'pricing' && <div className="mx-auto max-w-5xl"><div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold">Prices & Stripe mapping</h3><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stripeConfigured ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300'}`}>Stripe {stripeMode}</span></div><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Amounts use Stripe minor units: 4900 means $49.00 USD. Provisioning saves a draft when needed, creates missing recurring Prices, and fills their IDs. Publish the draft to enable Checkout.</p></div><div className="flex shrink-0 flex-wrap gap-2"><button type="button" onClick={provisionStripe} disabled={!stripeCatalogProvisioningEnabled || !!busy || !editor.prices.some(x => x.isActive && Number(x.unitAmount) > 0 && !x.stripePriceId)} title={!stripeConfigured ? 'Set Stripe__SecretKey and restart the application' : !stripeCatalogProvisioningEnabled ? 'Catalog provisioning is disabled by Stripe configuration' : undefined} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-[#0b5cff] shadow-sm transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-blue-400/20 dark:bg-white/5 dark:hover:bg-blue-400/10"><Cloud className="h-3.5 w-3.5"/>{busy === 'stripe' ? 'Creating…' : 'Create missing in Stripe'}</button><button type="button" onClick={() => update(x => ({ ...x, prices: [...x.prices, { id: newId(), currency: 'usd', interval: BillingInterval.Month, unitAmount: '0', stripePriceId: '', isActive: true }] }))} className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-[#0b5cff] dark:bg-blue-400/10"><Plus className="h-3.5 w-3.5"/>Add price</button></div></div>{editor.prices.length === 0 ? <EmptyState icon={BadgeDollarSign} title="No prices configured" body="Contact-sales plans may omit prices. Self-serve plans need at least one active monthly price." action={<button type="button" onClick={() => update(x => ({ ...x, prices: [{ id: newId(), currency: 'usd', interval: BillingInterval.Month, unitAmount: '0', stripePriceId: '', isActive: true }] }))} className="text-xs font-semibold text-[#0b5cff]">Add the first price →</button>}/> : <div className="space-y-3">{editor.prices.map((price, index) => <div key={price.id} className="grid items-end gap-3 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-white/10 dark:bg-white/[.02] lg:grid-cols-[90px_120px_140px_minmax(180px,1fr)_auto_auto]"><label className={labelClass}>Currency<input required maxLength={3} value={price.currency} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, currency: e.target.value.toLowerCase() } : row) }))} className={`${fieldClass} font-mono uppercase`}/></label><label className={labelClass}>Interval<select value={price.interval} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, interval: e.target.value as BillingInterval } : row) }))} className={fieldClass}><option value={BillingInterval.Month}>Monthly</option><option value={BillingInterval.Year}>Annual</option></select></label><label className={labelClass}>Minor units<input required type="number" min="0" value={price.unitAmount} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, unitAmount: e.target.value } : row) }))} className={fieldClass}/></label><label className={labelClass}>Stripe Price ID<input placeholder="Created automatically or paste price_…" value={price.stripePriceId} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, stripePriceId: e.target.value } : row) }))} className={`${fieldClass} font-mono`}/></label><label className="flex h-[42px] items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={price.isActive} onChange={e => update(x => ({ ...x, prices: x.prices.map((row, i) => i === index ? { ...row, isActive: e.target.checked } : row) }))} className="rounded border-slate-300 text-[#0b5cff] focus:ring-[#0b5cff]"/>Active</label><button type="button" title="Remove price" onClick={() => update(x => ({ ...x, prices: x.prices.filter((_, i) => i !== index) }))} className="grid h-[42px] w-[42px] place-items-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-400/10"><Trash2 className="h-4 w-4"/></button></div>)}</div>}</div>}
 
             {tab === 'features' && <div className="mx-auto max-w-5xl"><div className="mb-5 flex items-end justify-between gap-4"><div><h3 className="text-sm font-semibold">Customer-facing features</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Features are displayed in this order on pricing and billing surfaces.</p></div><button type="button" onClick={() => update(x => ({ ...x, features: [...x.features, { id: newId(), key: '', name: '', description: '', enabled: true }] }))} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-[#0b5cff] dark:bg-blue-400/10"><Plus className="h-3.5 w-3.5"/>Add feature</button></div>{editor.features.length === 0 ? <EmptyState icon={Sparkles} title="No features yet" body="Add the outcomes customers receive with this plan. Keys remain machine-readable for entitlement checks." action={<button type="button" onClick={() => update(x => ({ ...x, features: [{ id: newId(), key: '', name: '', description: '', enabled: true }] }))} className="text-xs font-semibold text-[#0b5cff]">Add the first feature →</button>}/> : <div className="space-y-3">{editor.features.map((feature, index) => <div key={feature.id} className="grid items-end gap-3 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-white/10 dark:bg-white/[.02] lg:grid-cols-[auto_180px_minmax(180px,.8fr)_minmax(220px,1.2fr)_auto_auto]"><GripVertical className="mb-3 h-4 w-4 text-slate-300"/><label className={labelClass}>Feature key<input required placeholder="advanced.analytics" value={feature.key} onChange={e => update(x => ({ ...x, features: x.features.map((row, i) => i === index ? { ...row, key: e.target.value } : row) }))} className={`${fieldClass} font-mono`}/></label><label className={labelClass}>Name<input required placeholder="Advanced analytics" value={feature.name} onChange={e => update(x => ({ ...x, features: x.features.map((row, i) => i === index ? { ...row, name: e.target.value } : row) }))} className={fieldClass}/></label><label className={labelClass}>Description<input placeholder="Optional supporting detail" value={feature.description} onChange={e => update(x => ({ ...x, features: x.features.map((row, i) => i === index ? { ...row, description: e.target.value } : row) }))} className={fieldClass}/></label><label className="flex h-[42px] items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={feature.enabled} onChange={e => update(x => ({ ...x, features: x.features.map((row, i) => i === index ? { ...row, enabled: e.target.checked } : row) }))} className="rounded border-slate-300 text-[#0b5cff] focus:ring-[#0b5cff]"/>Enabled</label><button type="button" title="Remove feature" onClick={() => update(x => ({ ...x, features: x.features.filter((_, i) => i !== index) }))} className="grid h-[42px] w-[42px] place-items-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-400/10"><Trash2 className="h-4 w-4"/></button></div>)}</div>}</div>}
 
