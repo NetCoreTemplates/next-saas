@@ -1,5 +1,5 @@
 /* Options:
-Date: 2026-09-16 15:21:31
+Date: 2026-09-19 23:18:17
 Version: 10.21
 Tip: To override a DTO option, remove "//" prefix before updating
 BaseUrl: http://127.0.0.1:5005
@@ -93,6 +93,13 @@ export enum CouponDuration
     Once = 'Once',
     Forever = 'Forever',
     Repeating = 'Repeating',
+}
+
+export enum PlanAudience
+{
+    Both = 'Both',
+    Individual = 'Individual',
+    Business = 'Business',
 }
 
 export enum BillingInterval
@@ -311,6 +318,7 @@ export class PlanInfo
     public code: string;
     public name: string;
     public description: string;
+    public audience: PlanAudience;
     public isContactSales: boolean;
     public trialDays?: number;
     public features: string[] = [];
@@ -573,6 +581,12 @@ export class NotificationPreference extends SaasAuditBase
     public constructor(init?: Partial<NotificationPreference>) { super(init); (Object as any).assign(this, init); }
 }
 
+export enum WorkspaceKind
+{
+    Individual = 'Individual',
+    Business = 'Business',
+}
+
 export enum LifecycleRequestType
 {
     Export = 'Export',
@@ -642,6 +656,7 @@ export class SaasPlan extends SaasAuditBase
     public isPublic: boolean;
     public isContactSales: boolean;
     public isArchived: boolean;
+    public audience: PlanAudience;
 
     public constructor(init?: Partial<SaasPlan>) { super(init); (Object as any).assign(this, init); }
 }
@@ -667,6 +682,7 @@ export class SaasPlanVersion extends SaasAuditBase
     public isPublic?: boolean;
     public isContactSales?: boolean;
     public isArchived?: boolean;
+    public audience?: PlanAudience;
     public trialDays?: number;
     public effectiveFrom?: string;
     public publishedDate?: string;
@@ -880,6 +896,7 @@ export class Workspace extends SaasAuditBase
     public name: string;
     public slug: string;
     public status: WorkspaceStatus;
+    public kind: WorkspaceKind;
     public billingEmail?: string;
     public stripeCustomerId?: string;
 
@@ -2313,6 +2330,7 @@ export class SaveSaasPlanDraft implements IReturn<SaasPlanDetails>, IPost
     public isPublic: boolean;
     public isContactSales: boolean;
     public isArchived: boolean;
+    public audience: PlanAudience;
     public trialDays?: number;
     public prices: SavePlanPrice[] = [];
     public features: SavePlanFeature[] = [];

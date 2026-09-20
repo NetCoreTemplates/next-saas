@@ -4,6 +4,8 @@ using ServiceStack.DataAnnotations;
 namespace MyApp.ServiceModel;
 
 public enum WorkspaceStatus { Active, Suspended, PendingDeletion, Archived, Deleted }
+public enum WorkspaceKind { Individual, Business }
+public enum PlanAudience { Both, Individual, Business }
 public enum WorkspaceMemberRole { Owner, Admin, Billing, Member }
 public enum WorkspaceMemberStatus { Invited, Active, Disabled }
 public enum PlanVersionStatus { Draft, Published, Retired }
@@ -28,6 +30,7 @@ public class Workspace : SaasAuditBase
     [Index] public string Name { get; set; } = "";
     public string Slug { get; set; } = "";
     public WorkspaceStatus Status { get; set; } = WorkspaceStatus.Active;
+    public WorkspaceKind Kind { get; set; } = WorkspaceKind.Individual;
     public string? BillingEmail { get; set; }
     [Index] public string? StripeCustomerId { get; set; }
 }
@@ -67,6 +70,7 @@ public class SaasPlan : SaasAuditBase
     public bool IsPublic { get; set; } = true;
     public bool IsContactSales { get; set; }
     public bool IsArchived { get; set; }
+    public PlanAudience Audience { get; set; } = PlanAudience.Both;
 }
 
 [UniqueConstraint(nameof(PlanId), nameof(Version))]
@@ -82,6 +86,7 @@ public class SaasPlanVersion : SaasAuditBase
     public bool? IsPublic { get; set; }
     public bool? IsContactSales { get; set; }
     public bool? IsArchived { get; set; }
+    public PlanAudience? Audience { get; set; }
     public int? TrialDays { get; set; }
     public DateTime? EffectiveFrom { get; set; }
     public DateTime? PublishedDate { get; set; }
@@ -253,6 +258,7 @@ public class PlanInfo
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public PlanAudience Audience { get; set; } = PlanAudience.Both;
     public bool IsContactSales { get; set; }
     public int? TrialDays { get; set; }
     public List<string> Features { get; set; } = [];
@@ -633,6 +639,7 @@ public class SaveSaasPlanDraft : IPost, IReturn<SaasPlanDetails>
     public bool IsPublic { get; set; }
     public bool IsContactSales { get; set; }
     public bool IsArchived { get; set; }
+    public PlanAudience Audience { get; set; } = PlanAudience.Both;
     public int? TrialDays { get; set; }
     public List<SavePlanPrice> Prices { get; set; } = [];
     public List<SavePlanFeature> Features { get; set; } = [];

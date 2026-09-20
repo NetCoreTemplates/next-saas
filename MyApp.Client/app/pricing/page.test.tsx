@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { BillingInterval, CreateCheckoutSession, GetSaasPlans, PlanInfo, PlanPriceInfo } from '@/lib/dtos'
+import { BillingInterval, CreateCheckoutSession, GetSaasPlans, PlanAudience, PlanInfo, PlanPriceInfo } from '@/lib/dtos'
 
 const mocks = vi.hoisted(() => {
   process.env.seedPlans = JSON.stringify([{
@@ -47,6 +47,35 @@ function getRequestCalls<T>(type: new (...args: never[]) => T) {
 describe('PricingPage checkout catalog', () => {
   beforeEach(() => {
     mocks.api.mockReset()
+  })
+
+  it('shows Personal and Business plans with billing controls beside the cards', async () => {
+    const makePlan = (name: string, audience: PlanAudience, monthly: number, annual: number) => new PlanInfo({
+      code: name.toLowerCase(), name, audience, description: `${name} plan`, features: [], quotas: [],
+      prices: [
+        new PlanPriceInfo({ interval: BillingInterval.Month, currency: 'usd', unitAmount: monthly }),
+        new PlanPriceInfo({ interval: BillingInterval.Year, currency: 'usd', unitAmount: annual }),
+      ],
+    })
+    mocks.api.mockResolvedValue({ succeeded: true, response: { results: [
+      makePlan('Personal Plus', PlanAudience.Individual, 1200, 12000),
+      makePlan('Business Plus', PlanAudience.Business, 2500, 25000),
+    ] } })
+
+    render(<PricingPage/>)
+
+    await screen.findByText('Personal Plus')
+    const planType = screen.getByRole('group', { name: 'Plan type' })
+    const billingInterval = screen.getByRole('group', { name: 'Billing interval' })
+    expect(planType.closest('section')).toBe(billingInterval.closest('section'))
+    expect(planType.closest('section')?.className).toContain('bg-[#f6f8fb]')
+    expect(screen.queryByText('Business Plus')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Business' }))
+    expect(await screen.findByText('Business Plus')).toBeTruthy()
+    expect(screen.queryByText('Personal Plus')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Annual/ }))
+    expect(screen.getByText('$21')).toBeTruthy()
   })
 
   it('does not submit a paid fallback price while the live catalog is pending', () => {

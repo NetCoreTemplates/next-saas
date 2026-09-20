@@ -12,7 +12,7 @@ public interface IAccountDeletionManager
     void RemoveSaasAccess(string userId);
 }
 
-public class AccountDeletionManager(IDbConnectionFactory dbFactory) : IAccountDeletionManager
+public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? config = null) : IAccountDeletionManager
 {
     public List<string> GetOwnedOrganizationNames(string userId)
     {
@@ -25,7 +25,7 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory) : IAccountDe
         if (ownedIds.Count == 0) return [];
 
         return db.SelectByIds<Workspace>(ownedIds)
-            .Where(x => x.Status != WorkspaceStatus.Deleted)
+            .Where(x => x.Status != WorkspaceStatus.Deleted && !CanDeleteWithAccount(db, x))
             .OrderBy(x => x.Name)
             .Select(x => x.Name)
             .ToList();
@@ -34,13 +34,37 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory) : IAccountDe
     public void RemoveSaasAccess(string userId)
     {
         using var db = dbFactory.Open();
-        var owned = GetOwnedOrganizationNames(db, userId);
-        if (owned.Count > 0)
+        var blocking = GetOwnedOrganizationNames(db, userId);
+        if (blocking.Count > 0)
             throw new InvalidOperationException(
-                $"Transfer or delete the owned organization{(owned.Count == 1 ? "" : "s")} before deleting this account: {string.Join(", ", owned)}.");
+                $"Cancel paid billing or resolve the hold for an individual account, or transfer/delete a business organization before deleting this account: {string.Join(", ", blocking)}.");
 
         using var transaction = db.OpenTransaction();
         var now = DateTime.UtcNow;
+
+        var ownedIds = db.Select<WorkspaceMember>(x => x.UserId == userId && x.Role == WorkspaceMemberRole.Owner && x.Status == WorkspaceMemberStatus.Active)
+            .Select(x => x.WorkspaceId).Distinct().ToList();
+        foreach (var workspace in db.SelectByIds<Workspace>(ownedIds).Where(x => x.Status != WorkspaceStatus.Deleted && CanDeleteWithAccount(db, x)))
+        {
+            var existing = db.Select<WorkspaceLifecycleRequest>(x => x.WorkspaceId == workspace.Id && x.Type == LifecycleRequestType.Delete)
+                .Any(x => x.Status is LifecycleRequestStatus.Pending or LifecycleRequestStatus.Scheduled or LifecycleRequestStatus.Processing);
+            if (!existing)
+            {
+                var operation = new WorkspaceLifecycleRequest {
+                    WorkspaceId = workspace.Id, Type = LifecycleRequestType.Delete, Status = LifecycleRequestStatus.Scheduled,
+                    RequestedBy = userId, Confirmation = workspace.Name,
+                    ScheduledAt = now.AddDays(config?.WorkspaceDeletionDelayDays ?? 7),
+                    CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
+                };
+                db.Insert(operation);
+                if (db.TableExists<SaasAuditEvent>())
+                    db.Insert(new SaasAuditEvent { WorkspaceId = workspace.Id, Category = "lifecycle", Action = "deletion.requested", ActorId = userId, SubjectId = operation.Id, Reason = "Individual account deletion", CreatedDate = now });
+            }
+            workspace.Status = WorkspaceStatus.PendingDeletion;
+            workspace.ModifiedDate = now;
+            workspace.ModifiedBy = userId;
+            db.Update(workspace);
+        }
 
         if (db.TableExists<WorkspaceMember>())
         {
@@ -127,9 +151,20 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory) : IAccountDe
         return ownedIds.Count == 0
             ? []
             : db.SelectByIds<Workspace>(ownedIds)
-                .Where(x => x.Status != WorkspaceStatus.Deleted)
+                .Where(x => x.Status != WorkspaceStatus.Deleted && !CanDeleteWithAccount(db, x))
                 .OrderBy(x => x.Name)
                 .Select(x => x.Name)
                 .ToList();
+    }
+
+    private static bool CanDeleteWithAccount(System.Data.IDbConnection db, Workspace workspace)
+    {
+        if (workspace.Kind != WorkspaceKind.Individual || !db.TableExists<WorkspaceLifecycleRequest>() ||
+            !db.TableExists<BillingSubscription>()) return false;
+        var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        if (subscription == null || subscription.Status is not (SubscriptionStatus.Free or SubscriptionStatus.Canceled)) return false;
+        if (db.TableExists<WorkspaceRetentionPolicy>() &&
+            db.SingleById<WorkspaceRetentionPolicy>(workspace.Id)?.LegalHold == true) return false;
+        return db.Count<WorkspaceMember>(x => x.WorkspaceId == workspace.Id && x.Status != WorkspaceMemberStatus.Disabled) == 1;
     }
 }

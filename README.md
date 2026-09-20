@@ -1,16 +1,16 @@
 # Next SaaS
 
-A production-oriented .NET 10 + ServiceStack + Next.js 16 template for self-serve B2B SaaS products
+A production-oriented .NET 10 + ServiceStack + Next.js 16 template for self-serve individual and business SaaS products
 
 The included Acme product is a deliberately small hosted document-storage and analytics service. Its file module exists to demonstrate tenant isolation, quota reservations, exact storage gauges, analytics, and lifecycle operations—not document parsing, ingestion, search, or RAG.
 
-Customer-facing screens call the tenant/account boundary an **Organization**. Internal code, DTOs, and database records retain the conventional `Workspace` name so established APIs and extension points remain stable.
+Registration creates either a private **Individual** account or a team-ready **Business** organization. Internal code, DTOs, and database records retain the `Workspace` name for both tenant boundaries.
 
 ## What is included
 
 - enterprise marketing site, pricing, sign-in, and registration;
-- personal and team workspaces with invitation acceptance, persisted workspace switching, and Owner, Admin, Billing, and Member roles;
-- Free, Pro, Business, and sales-led Enterprise tiers;
+- individual accounts and business organizations with invitation acceptance, persisted workspace switching, and Owner, Admin, Billing, and Member roles for businesses;
+- shared Free, Individual-only Personal, Business-only Pro and Business, and sales-led Enterprise tiers;
 - immutable published plan versions, features, prices, and quotas;
 - Stripe Checkout, Customer Portal, plan trials, admin-managed promotion codes, signed webhook validation, and local subscription projection;
 - immutable, idempotent document-count, exact-byte storage, upload, API-request, and seat usage with real-time quota aggregates and hard-limit enforcement;
@@ -178,7 +178,7 @@ For a complete walkthrough, see [Connect Stripe sandbox](https://react-templates
 
 1. Set `Stripe__SecretKey` to a Stripe sandbox key and restart the application.
 2. Sign in as an administrator, open `/admin/plans`, remain on the **Plans** tab, select a paid plan, and open its **Pricing** section.
-3. Click **Create missing in Stripe** to create or reuse the plan's Stripe Product and recurring Prices. The returned `price_...` mappings are filled into the draft automatically.
+3. Click **Create missing in Stripe** to save a draft if needed, then create or reuse the plan's Stripe Product and recurring Prices. The returned `price_...` mappings are filled into that draft automatically.
 4. Publish the updated draft. Repeat for each self-serve paid plan. Zero-cost and contact-sales plans are intentionally skipped.
 5. Configure a Stripe Customer Portal configuration if you need a non-default portal.
 6. Register `POST https://your-domain.example/stripe/webhook` for Checkout, subscription, and failed-payment events.
@@ -196,6 +196,12 @@ stripe listen \
 Copy the listener's `whsec_...` value into `Stripe__WebhookSecret`, then restart the application. Checkout's success return also asks the server to verify the completed Checkout Session directly with Stripe. This closes the browser/webhook timing race and can recover a completed local checkout when the listener was not running. Webhooks remain required for renewals, payment failures, cancellations, and changes made later in the Customer Portal.
 
 Catalog provisioning is metadata-based and idempotent, so retrying reuses template-managed Stripe objects instead of duplicating them. It is enabled for sandbox keys by default. Automatic live-mode provisioning requires the explicit deployment setting `Stripe__AllowLiveCatalogProvisioning=true`; otherwise live Products and Prices must be managed directly in Stripe and their IDs pasted into the plan draft.
+
+## Individual and business accounts
+
+Sign-up asks whether the customer is joining for themselves or for a business. Individual registration creates a private one-owner workspace; business registration requires an organization name and creates a team-ready workspace. Both start on Free without a payment method. The Personal plan is available only to Individual accounts; Pro, Business, and Enterprise are for Business organizations. `/admin/plans` controls plan audience on each draft version. Pricing filters the catalog by audience, and the API rechecks audience before Checkout. Individual accounts cannot invite members. A customer can explicitly create a separate business organization in Settings rather than silently changing an existing account's kind.
+
+Deleting an eligible free individual account schedules its private workspace for the configured delayed deletion and removes the Identity account. Paid individual subscriptions must be canceled first; legal holds also block deletion. Business owners must transfer or delete their organizations before deleting their personal Identity account. A subscription change never converts an Individual account into a Business organization.
 
 Until Price IDs and secrets exist, Free remains fully functional and paid checkout returns a descriptive configuration error. This makes the generated template useful immediately without accidentally creating live billing objects.
 

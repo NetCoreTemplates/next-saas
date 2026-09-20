@@ -18,6 +18,8 @@ function SignUpContent() {
     const [confirmPassword, setConfirmPassword] = useState<string>()
     const router = useRouter()
     const searchParams = useSearchParams()
+    const [accountKind, setAccountKind] = useState<'Individual' | 'Business'>(searchParams.get('account') === 'business' ? 'Business' : 'Individual')
+    const [organizationName, setOrganizationName] = useState('')
     const { user, revalidate } = appAuth()
 
     const setUser = (email: string) => {
@@ -47,13 +49,17 @@ function SignUpContent() {
         }
 
         const returnUrl = getRedirect(searchParams)
+        if (accountKind === 'Business' && (organizationName.trim().length < 2 || organizationName.trim().length > 100)) {
+            client.setError({fieldName: 'organizationName', message: 'Enter an organization name between 2 and 100 characters.'})
+            return
+        }
         const api = await client.api(new Register({
             displayName,
             email: userName,
             password,
             confirmPassword,
             autoLogin,
-            meta: returnUrl ? { returnUrl } : undefined,
+            meta: { ...(returnUrl ? { returnUrl } : {}), accountKind, ...(accountKind === 'Business' ? { organizationName: organizationName.trim() } : {}) },
         }))
         if (api.succeeded) {
             await revalidate()
@@ -72,9 +78,19 @@ function SignUpContent() {
                 <section className="overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(16,24,40,.10)] dark:border-white/10 dark:bg-[#0c1729]">
                     <form onSubmit={onSubmit} className="max-w-prose">
                         <div>
-                            <ErrorSummary except="displayName,userName,password,confirmPassword"/>
+                            <ErrorSummary except="organizationName,displayName,userName,password,confirmPassword"/>
                             <div className="space-y-6 bg-white px-6 py-7 dark:bg-[#0c1729]">
+                                <div role="group" aria-label="Account type" className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-white/[.035]">
+                                    {(['Individual', 'Business'] as const).map(kind => (
+                                        <button key={kind} type="button" aria-pressed={accountKind === kind} onClick={() => setAccountKind(kind)}
+                                            className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0b5cff] ${accountKind === kind ? 'bg-white text-slate-950 shadow-sm dark:bg-white/10 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}`}>
+                                            {kind === 'Individual' ? 'Personal' : 'Business'}
+                                        </button>
+                                    ))}
+                                </div>
                                 <div className="flex flex-col gap-y-4">
+                                    {accountKind === 'Business' && <TextInput id="organizationName" label="Organization name" required minLength={2} maxLength={100}
+                                        value={organizationName} onChange={setOrganizationName}/>}
                                     <TextInput id="displayName" help="Your first and last name" autoComplete="name"
                                                value={displayName} onChange={setDisplayName}/>
                                     <TextInput id="userName" autoComplete="email"
@@ -88,7 +104,7 @@ function SignUpContent() {
                             <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-right dark:border-white/10 dark:bg-white/[.025]">
                                 <div className="flex justify-end">
                                     { client.loading ? <FormLoading className="flex-1"/> : null }
-                                    <PrimaryButton className="ml-3 !bg-[#0b5cff] !px-6 !py-3">Create organization</PrimaryButton>
+                                    <PrimaryButton className="ml-3 !bg-[#0b5cff] !px-6 !py-3">{accountKind === 'Business' ? 'Create organization' : 'Create account'}</PrimaryButton>
                                 </div>
                             </div>
                         </div>

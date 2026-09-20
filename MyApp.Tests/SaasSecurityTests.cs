@@ -161,6 +161,7 @@ public class SaasSecurityTests
         var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
         Assert.Multiple(() => {
             Assert.That(workspace.Name, Is.EqualTo("Example, Inc."));
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Business));
             Assert.That(workspace.Slug, Is.EqualTo("example-inc"));
             Assert.That(member.UserId, Is.EqualTo("user-1"));
             Assert.That(member.Role, Is.EqualTo(WorkspaceMemberRole.Owner));
@@ -327,7 +328,7 @@ public class SaasSecurityTests
                 db.CreateTable<Workspace>();
                 db.CreateTable<WorkspaceMember>();
                 var now = DateTime.UtcNow;
-                db.Insert(new Workspace { Id = "organization-1", Name = "Owned Co", Slug = "owned-co", CreatedDate = now, ModifiedDate = now });
+                db.Insert(new Workspace { Id = "organization-1", Name = "Owned Co", Slug = "owned-co", Kind = WorkspaceKind.Business, CreatedDate = now, ModifiedDate = now });
                 db.Insert(new WorkspaceMember { Id = "member-1", WorkspaceId = "organization-1", UserId = "user-1", Role = WorkspaceMemberRole.Owner, Status = WorkspaceMemberStatus.Active, CreatedDate = now, ModifiedDate = now });
             }
 
@@ -335,6 +336,49 @@ public class SaasSecurityTests
             Assert.That(manager.GetOwnedOrganizationNames("user-1"), Is.EqualTo(new[] { "Owned Co" }));
             Assert.That(Assert.Throws<InvalidOperationException>(() => manager.RemoveSaasAccess("user-1"))!.Message,
                 Does.Contain("Owned Co"));
+        }
+        finally
+        {
+            File.Delete(dbPath);
+        }
+    }
+
+    [Test]
+    public void Individual_account_deletion_schedules_its_free_workspace()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"next-saas-individual-delete-{Guid.NewGuid():N}.db");
+        try
+        {
+            var factory = new OrmLiteConnectionFactory($"Data Source={dbPath}", SqliteDialect.Provider);
+            using (var db = factory.Open())
+            {
+                db.CreateTable<Workspace>();
+                db.CreateTable<WorkspaceMember>();
+                db.CreateTable<SaasPlan>();
+                db.CreateTable<SaasPlanVersion>();
+                db.CreateTable<BillingSubscription>();
+                db.CreateTable<WorkspaceLifecycleRequest>();
+                db.CreateTable<SaasAuditEvent>();
+                var now = DateTime.UtcNow;
+                db.Insert(new Workspace { Id = "individual-1", Name = "Ada", Slug = "ada", Kind = WorkspaceKind.Individual, CreatedDate = now, ModifiedDate = now });
+                db.Insert(new SaasPlan { Id = "plan.free", Code = "free", Name = "Free", CreatedDate = now, ModifiedDate = now });
+                db.Insert(new SaasPlanVersion { Id = "plan.free.v1", PlanId = "plan.free", Status = PlanVersionStatus.Published, CreatedDate = now, ModifiedDate = now });
+                db.Insert(new WorkspaceMember { WorkspaceId = "individual-1", UserId = "user-1", Role = WorkspaceMemberRole.Owner, Status = WorkspaceMemberStatus.Active, CreatedDate = now, ModifiedDate = now });
+                db.Insert(new BillingSubscription { WorkspaceId = "individual-1", PlanVersionId = "plan.free.v1", Status = SubscriptionStatus.Free, PeriodStart = now, PeriodEnd = now.AddMonths(1), CreatedDate = now, ModifiedDate = now });
+            }
+
+            var manager = new AccountDeletionManager(factory, new SaasConfig { WorkspaceDeletionDelayDays = 7 });
+            Assert.That(manager.GetOwnedOrganizationNames("user-1"), Is.Empty);
+            manager.RemoveSaasAccess("user-1");
+
+            using var verify = factory.Open();
+            var request = verify.Single<WorkspaceLifecycleRequest>(x => x.WorkspaceId == "individual-1");
+            Assert.Multiple(() => {
+                Assert.That(request.Status, Is.EqualTo(LifecycleRequestStatus.Scheduled));
+                Assert.That(request.ScheduledAt, Is.GreaterThan(DateTime.UtcNow.AddDays(6)));
+                Assert.That(verify.SingleById<Workspace>("individual-1")!.Status, Is.EqualTo(WorkspaceStatus.PendingDeletion));
+                Assert.That(verify.Count<WorkspaceMember>(), Is.Zero);
+            });
         }
         finally
         {

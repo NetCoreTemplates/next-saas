@@ -6,7 +6,7 @@ import { Copy, MailPlus, RefreshCw, ShieldCheck, Trash2, UserRound, Users } from
 import AppShell, { PageHeading, Panel, StatusPill } from '@/components/app-shell'
 import { ValidateAuth, appAuth } from '@/lib/auth'
 import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
-import { GetWorkspaceMembers, InviteWorkspaceMember, RemoveWorkspaceMember, ResendWorkspaceInvitation, UpdateWorkspaceMemberRole, WorkspaceMemberInfo, WorkspaceMemberRole } from '@/lib/dtos'
+import { GetWorkspaceMembers, InviteWorkspaceMember, RemoveWorkspaceMember, ResendWorkspaceInvitation, UpdateWorkspaceMemberRole, WorkspaceKind, WorkspaceMemberInfo, WorkspaceMemberRole } from '@/lib/dtos'
 
 function TeamPage() {
   const client = useClient()
@@ -64,6 +64,7 @@ function TeamPage() {
   }
 
   if (loading) return <AppShell><LoadingPanel /></AppShell>
+  if (data?.workspace?.kind === WorkspaceKind.Individual) return <AppShell workspaceName={data.workspace.name}><PageHeading eyebrow="Account access" title="Team" description="Personal accounts are private and do not have team members. Create a business organization from Settings to collaborate." /></AppShell>
   const canAdminister = ['Owner', 'Admin'].includes(data?.memberRole ?? '')
 
   return <AppShell workspaceName={data?.workspace?.name}>

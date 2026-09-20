@@ -1,6 +1,7 @@
 using MyApp.ServiceModel;
 using ServiceStack.OrmLite;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MyApp.Migrations;
 
@@ -37,13 +38,13 @@ public class Migration1001 : MigrationBase
         Db.CreateTable<DataRetentionRun>();
 
         foreach (var plan in LoadPlans())
-            SeedPlan(plan.Code, plan.Name, plan.Description, plan.DisplayOrder, plan.ContactSales,
+            SeedPlan(plan.Code, plan.Name, plan.Description, plan.DisplayOrder, plan.ContactSales, plan.Audience,
                 plan.Monthly, plan.Annual, plan.Documents, plan.StorageBytes, plan.ApiRequests, plan.Seats,
                 plan.Features.Select(x => (x.Key, x.Name)).ToArray(), plan.TrialDays);
 
     }
 
-    private void SeedPlan(string code, string name, string description, int order, bool contactSales,
+    private void SeedPlan(string code, string name, string description, int order, bool contactSales, PlanAudience audience,
         long monthly, long annual, long? documents, long? storageBytes, long? apiRequests,
         long? seats, (string Key, string Name)[] features, int? trialDays)
     {
@@ -52,12 +53,12 @@ public class Migration1001 : MigrationBase
         var versionId = $"plan.{code}.v1";
         Db.Insert(new SaasPlan {
             Id = planId, Code = code, Name = name, Description = description, DisplayOrder = order,
-            IsContactSales = contactSales, CreatedDate = now, ModifiedDate = now,
+            IsContactSales = contactSales, Audience = audience, CreatedDate = now, ModifiedDate = now,
         });
         Db.Insert(new SaasPlanVersion {
             Id = versionId, PlanId = planId, Version = 1, Status = PlanVersionStatus.Published,
             Name = name, Description = description, DisplayOrder = order, IsPublic = true,
-            IsContactSales = contactSales, IsArchived = false,
+            IsContactSales = contactSales, IsArchived = false, Audience = audience,
             TrialDays = trialDays, EffectiveFrom = now, PublishedDate = now,
             PublishedBy = "migration", CreatedDate = now, ModifiedDate = now,
         });
@@ -106,6 +107,7 @@ public class Migration1001 : MigrationBase
             throw new FileNotFoundException("The plan seed file was not copied to the application output.", path);
         return JsonSerializer.Deserialize<List<PlanSeed>>(File.ReadAllText(path), new JsonSerializerOptions {
             PropertyNameCaseInsensitive = true,
+            Converters = { new JsonStringEnumConverter() },
         }) ?? throw new InvalidOperationException("plans.json does not contain a valid plan catalog.");
     }
 
@@ -113,6 +115,7 @@ public class Migration1001 : MigrationBase
     {
         public string Code { get; set; } = "";
         public string Name { get; set; } = "";
+        public PlanAudience Audience { get; set; } = PlanAudience.Both;
         public string Description { get; set; } = "";
         public int DisplayOrder { get; set; }
         public bool ContactSales { get; set; }
