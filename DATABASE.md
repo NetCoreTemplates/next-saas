@@ -19,7 +19,8 @@ migration, because schema migrations do not copy data between engines.
 | SQL Server | `sqlserver` | Your organization standardizes on SQL Server. Budget roughly 2GB of memory for the container. | Docker or Podman |
 
 Whichever you choose, the application code is identical: `MyApp/Configure.Db.cs` branches on
-`Database:Provider` for both OrmLite and EF Core.
+`Database:Provider` for both OrmLite and EF Core, and `DB_PROVIDER` supplies that setting, so
+the name above is the only place a provider is written down.
 
 ## Step 1 — Record the choice
 
@@ -59,8 +60,10 @@ For a server provider this:
 SQLite starts nothing; it writes the same file and `MyApp/App_Data/app.db` is created on first
 run.
 
-It sets `Database__Provider` and `ConnectionStrings__DefaultConnection` in `.env`, replacing
-those assignments in place and leaving the rest of the file alone. The application reads `.env`
+It sets `DB_PROVIDER` and `ConnectionStrings__DefaultConnection` in `.env`, replacing those
+assignments in place and leaving the rest of the file alone. `DB_PROVIDER` implies
+`Database:Provider` in the application, so the provider is one setting rather than two that can
+drift apart. The application reads `.env`
 when it runs in Development, so any `Key__Sub` value there overrides `MyApp/appsettings.json`
 and `MyApp/appsettings.Development.json` on your machine only:
 
@@ -72,8 +75,9 @@ MyApp/appsettings.json               deployment-wide template defaults
 
 `MyApp/appsettings.Development.json` therefore stays on SQLite in source control, and switching
 your own machine to PostgreSQL changes nothing a teammate has to review. A variable already set
-in your environment still wins over `.env`, so a one-off
-`Database__Provider=Sqlite dotnet run` keeps working. Nothing in `.env` reaches a deployment.
+in your environment still wins over `.env`, so a one-off `DB_PROVIDER=sqlite dotnet run` keeps
+working, and an explicit `Database__Provider` wins over `DB_PROVIDER`. Nothing in `.env` reaches
+a deployment.
 
 Useful overrides, all optional:
 
@@ -217,10 +221,13 @@ destination that provisions nothing:
 4. set `DB_PROVIDER=<name>` and put the managed connection string in
    `MyApp/appsettings.Production.json` yourself;
 5. set `DEV_DB_ENGINE` to the engine it actually runs, so
-   `./scripts/dev-db.sh up` still gives you the same engine locally.
+   `./scripts/dev-db.sh up` still gives you the same engine locally;
+6. set `Database__Provider` explicitly, because a destination named after a managed instance is
+   not a provider name the application recognizes, so it cannot imply one.
 
 For example, a managed PostgreSQL destination named `postgres-managed` uses
-`DB_PROVIDER=postgres-managed` with `DEV_DB_ENGINE=postgres`.
+`DB_PROVIDER=postgres-managed` with `DEV_DB_ENGINE=postgres` and
+`Database__Provider=PostgreSql`.
 
 ## Troubleshooting
 

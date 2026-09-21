@@ -36,7 +36,11 @@ Use **Organization** in all customer-facing UI and copy. The internal domain, da
 
 `MyApp/Configure.Db.cs` branches on `Database:Provider` for both OrmLite and EF Core, so the
 application itself is provider-agnostic. `DB_PROVIDER` in `.env` selects the provider on both
-sides: `scripts/dev-db.sh` runs it locally from the same image, database name, login, and
+sides, and it is the only place a provider is named: `Program.cs` applies it as
+`Database:Provider` when that setting is absent, so `.env` never restates the provider. An
+explicit `Database__Provider` still wins, which is how a destination named after something
+other than a provider, such as a managed instance, names its engine.
+`scripts/dev-db.sh` runs the provider locally from the same image, database name, login, and
 initializer scripts the deployment uses, writing the connection into the private, gitignored
 `.env` that `Program.cs` applies in Development before `CreateBuilder` runs, because
 `CreateBuilder` composes HostingStartup configuration. Local overrides belong in `.env`, never in

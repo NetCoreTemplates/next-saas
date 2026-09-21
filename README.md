@@ -70,7 +70,8 @@ npm install
 ### Step 2 — Choose your database
 
 This is the first thing to customize, and it is one decision for both environments:
-`DB_PROVIDER` selects the database you run locally *and* the Kamal destination that deploys.
+`DB_PROVIDER` selects the database you run locally, the `Database:Provider` the application
+uses, *and* the Kamal destination that deploys.
 
 ```bash
 cp .env.example .env                 # first time only
