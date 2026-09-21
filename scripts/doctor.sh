@@ -44,9 +44,10 @@ PRODUCT_NAME="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 
 SUPPORT_EMAIL="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).Product?.SupportEmail ?? ''" "$APP_SETTINGS" 2>/dev/null)"
 EMAIL_PROVIDER="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).Notifications?.Provider ?? 'Development'" "$APP_SETTINGS" 2>/dev/null)"
 LOCAL_SETTINGS="$PROJECT_ROOT/MyApp/appsettings.Development.json"
-# The effective local provider: Database__Provider from the environment or the private .env
-# that scripts/dev-db.sh writes, then the source-controlled Development default.
-DATABASE_PROVIDER="${Database__Provider:-}"
+# The effective local provider, in the order the application resolves it: an explicit
+# Database__Provider, then DB_PROVIDER, which implies it, both from the environment or the
+# private .env that scripts/dev-db.sh writes, then the source-controlled Development default.
+DATABASE_PROVIDER="${Database__Provider:-${DB_PROVIDER:-}}"
 if [[ -z "$DATABASE_PROVIDER" && -f "$LOCAL_SETTINGS" ]]; then
   DATABASE_PROVIDER="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).Database?.Provider ?? ''" "$LOCAL_SETTINGS" 2>/dev/null)"
 fi

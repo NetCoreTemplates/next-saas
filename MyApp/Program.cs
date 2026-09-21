@@ -8,6 +8,7 @@ using MyApp.ServiceInterface;
 
 ApplyRuntimeSettingsEnvironment();
 ApplyDevelopmentEnvFile();
+ApplyDatabaseProviderAlias();
 AppHost.RegisterKey();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -166,6 +167,26 @@ static void ApplyRuntimeSettingsEnvironment()
         };
         Environment.SetEnvironmentVariable(string.Join("__", path), text);
     }
+}
+
+/// <summary>
+/// DB_PROVIDER is the single database switch: the operator scripts, the Kamal destination, and
+/// the Release workflow all read it, so it also selects Database:Provider for the application
+/// rather than being restated as a second setting. An explicit Database__Provider still wins,
+/// and an unrecognized DB_PROVIDER, such as a destination named after a managed instance, is
+/// left to whatever that deployment configures.
+///
+/// This runs before CreateBuilder for the same reason the .env file does: the database provider
+/// is resolved while HostingStartup configuration is composed.
+/// </summary>
+static void ApplyDatabaseProviderAlias()
+{
+    if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("Database__Provider")))
+        return;
+    var dbProvider = Environment.GetEnvironmentVariable("DB_PROVIDER");
+    if (string.IsNullOrEmpty(dbProvider) || !ConfigureDb.TryNormalizeProvider(dbProvider, out var provider))
+        return;
+    Environment.SetEnvironmentVariable("Database__Provider", provider);
 }
 
 /// <summary>

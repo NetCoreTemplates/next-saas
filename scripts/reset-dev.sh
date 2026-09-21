@@ -12,9 +12,10 @@ LOCAL_SETTINGS="$PROJECT_ROOT/MyApp/appsettings.Development.json"
 load_env_file "$PROJECT_ROOT/.env"
 
 # The local database provider is whatever the developer runs, which is normally whatever is
-# deployed. Database__Provider in the private .env wins, then the Development default.
+# deployed. This follows the application: an explicit Database__Provider in the private .env
+# wins, then DB_PROVIDER, which implies it, then the Development default.
 PROVIDER="${Database__Provider:-${DB_PROVIDER:-sqlite}}"
-if [[ -z "${Database__Provider:-}" && -f "$LOCAL_SETTINGS" ]] && command -v node >/dev/null 2>&1; then
+if [[ -z "${Database__Provider:-}" && -z "${DB_PROVIDER:-}" && -f "$LOCAL_SETTINGS" ]] && command -v node >/dev/null 2>&1; then
   LOCAL_PROVIDER="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).Database?.Provider ?? ''" "$LOCAL_SETTINGS" 2>/dev/null || true)"
   if [[ -n "$LOCAL_PROVIDER" ]]; then
     PROVIDER="$LOCAL_PROVIDER"

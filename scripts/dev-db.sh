@@ -141,7 +141,14 @@ write_local_settings() {
     exit 2
   fi
   set_env_value DB_PROVIDER "$PROVIDER"
-  set_env_value Database__Provider "$SETTINGS_PROVIDER"
+  # DB_PROVIDER implies Database:Provider in the application, so a recognized provider name
+  # needs no second setting. A destination named after something else, such as a managed
+  # instance selected with DEV_DB_ENGINE, still has to name the provider explicitly.
+  if [[ "$(normalize_provider "$PROVIDER")" == "unsupported" ]]; then
+    set_env_value Database__Provider "$SETTINGS_PROVIDER"
+  else
+    remove_env_value Database__Provider
+  fi
   set_env_value ConnectionStrings__DefaultConnection "$CONNECTION"
   # Running this script through sudo (a Docker daemon that needs root, say) would otherwise
   # leave a root-owned file the developer's editor cannot open.
@@ -172,6 +179,34 @@ else {
 }
 fs.writeFileSync(file, `${lines.join('\n').replace(/\n+$/, '')}\n`)
 NODE
+}
+
+# Removes one key from .env, so a setting the application now derives is not left behind
+# contradicting it. Keys that were never written are left alone.
+remove_env_value() {
+  local key="$1"
+  [[ -f "$ENV_FILE" ]] || return 0
+  grep -q "^[[:space:]]*${key}=" "$ENV_FILE" || return 0
+  NEXT_SAAS_ENV_FILE="$ENV_FILE" NEXT_SAAS_ENV_KEY="$key" node - <<'NODE'
+const fs = require('fs')
+const file = process.env.NEXT_SAAS_ENV_FILE
+const key = process.env.NEXT_SAAS_ENV_KEY
+const lines = fs.readFileSync(file, 'utf8').split('\n')
+  .filter(line => !line.trimStart().startsWith(`${key}=`))
+fs.writeFileSync(file, `${lines.join('\n').replace(/\n+$/, '')}\n`)
+NODE
+}
+
+# The canonical name for a provider, or "unsupported" for a destination the application does
+# not recognize. Mirrors ConfigureDb.TryNormalizeProvider in MyApp/Configure.Db.cs.
+normalize_provider() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    sqlite) printf 'sqlite' ;;
+    postgres|postgresql) printf 'postgres' ;;
+    sqlserver|mssql) printf 'sqlserver' ;;
+    mysql|mariadb) printf 'mysql' ;;
+    *) printf 'unsupported' ;;
+  esac
 }
 
 container_state() {
@@ -364,11 +399,11 @@ case "$COMMAND" in
       printf 'Image:      %s\n' "$IMAGE"
       printf 'Connection: %s\n' "${CONNECTION/$DEV_PASSWORD/********}"
     fi
-    if [[ -f "$ENV_FILE" ]] && grep -q '^Database__Provider=' "$ENV_FILE" 2>/dev/null; then
-      printf 'Overrides:  %s (%s)\n' "${ENV_FILE#"$PROJECT_ROOT/"}" \
-        "$(grep -m1 '^Database__Provider=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || printf 'unset')"
+    if [[ -f "$ENV_FILE" ]] && grep -q '^DB_PROVIDER=' "$ENV_FILE" 2>/dev/null; then
+      printf 'Overrides:  %s (DB_PROVIDER=%s)\n' "${ENV_FILE#"$PROJECT_ROOT/"}" \
+        "$(grep -m1 '^DB_PROVIDER=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || printf 'unset')"
     else
-      printf 'Dev JSON:   not written yet; run ./scripts/dev-db.sh up\n'
+      printf 'Overrides:  not written yet; run ./scripts/dev-db.sh up\n'
     fi
     ;;
   shell)

@@ -15,15 +15,30 @@ public class ConfigureDb : IHostingStartup
     /// Database:Provider values this application accepts, normalized to one canonical name so
     /// configuration, the Kamal destination, and the deployment scripts all agree.
     /// </summary>
-    public static string NormalizeProvider(string provider) => provider.Trim().ToLowerInvariant() switch
+    public static string NormalizeProvider(string provider) =>
+        TryNormalizeProvider(provider, out var normalized)
+            ? normalized
+            : throw new InvalidOperationException(
+                $"Unsupported Database.Provider '{provider}'. Use Sqlite, PostgreSql, SqlServer, or MySql.");
+
+    /// <summary>
+    /// Normalizes a provider name without throwing, so a caller such as the DB_PROVIDER alias in
+    /// Program.cs can leave an unrecognized name alone instead of rejecting it. A deployment may
+    /// name a Kamal destination after a managed instance (postgres-managed, say) that this
+    /// application never has to recognize, because that destination sets Database:Provider itself.
+    /// </summary>
+    public static bool TryNormalizeProvider(string? provider, out string normalized)
     {
-        "sqlite" => "sqlite",
-        "postgres" or "postgresql" => "postgres",
-        "sqlserver" or "mssql" => "sqlserver",
-        "mysql" or "mariadb" => "mysql",
-        _ => throw new InvalidOperationException(
-            $"Unsupported Database.Provider '{provider}'. Use Sqlite, PostgreSql, SqlServer, or MySql."),
-    };
+        normalized = (provider ?? "").Trim().ToLowerInvariant() switch
+        {
+            "sqlite" => "sqlite",
+            "postgres" or "postgresql" => "postgres",
+            "sqlserver" or "mssql" => "sqlserver",
+            "mysql" or "mariadb" => "mysql",
+            _ => "",
+        };
+        return normalized.Length > 0;
+    }
 
     public void Configure(IWebHostBuilder builder) => builder
         .ConfigureServices((context, services) => {
