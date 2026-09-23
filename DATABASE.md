@@ -105,6 +105,16 @@ dotnet watch
 
 Open `https://localhost:5001` and sign in as `admin@email.com` with `p@55wOrd`.
 
+To populate the selected local provider with repeatable example data for screenshots and product
+tours, run:
+
+```bash
+./scripts/seed-example-data.sh
+```
+
+Use `manager@email.com` for the populated Northstar Labs customer experience or
+`admin@email.com` for the Operations Center. The seed is idempotent and Development-only.
+
 Check the wiring at any time:
 
 ```bash
