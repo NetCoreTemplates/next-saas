@@ -1,7 +1,6 @@
 # Deployment configuration profiles
 
-[DATABASE.md](../DATABASE.md) is the step-by-step guide for choosing a provider and configuring
-it locally and in production. This file is the reference behind it.
+The [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) covers choosing a provider and configuring it locally and in production. This file is the deployment configuration reference.
 
 These templates make the database choice a configuration decision rather than a code change.
 The same choice applies locally and in production: `DB_PROVIDER` selects the Kamal destination
@@ -106,7 +105,7 @@ Adding MySQL or a managed database is additive and needs no workflow change:
 4. add a `config/appsettings.deploy.<provider>.example.json` profile and a branch in
    `scripts/configure-deployment.sh`;
 5. add its image, connection string, readiness probe, and client shell to `scripts/dev-db.sh`
-   so it runs locally too, and list it in `DATABASE.md`;
+   so it runs locally too, and list it in the published [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database);
 6. set the `DB_PROVIDER` repository variable to the new name.
 
 For a managed database hosted elsewhere, steps 2 and 3 reduce to an overlay with no accessory:

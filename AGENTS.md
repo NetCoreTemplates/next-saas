@@ -2,7 +2,7 @@
 
 This repository is a full-stack .NET 10, ServiceStack, Next.js 16, React 19, TypeScript, OrmLite, ASP.NET Core Identity, and Stripe Billing template.
 
-Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows, and [DATABASE.md](DATABASE.md) for the database provider workflow that spans local development and production.
+Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows, and the [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) for the provider workflow that spans local development and production.
 
 The canonical product documentation is the published docs hub, whose source lives in a separate
 repository. Keep it in sync with every change; see [Documentation](#documentation).
@@ -56,7 +56,7 @@ When adding a provider, add all of its files rather than branching the pipeline:
 
 - add its local case to `scripts/dev-db.sh` in the same change as its deployment files, so
   developers are never pushed back onto a different engine than production, and add it to the
-  provider table in `DATABASE.md`;
+  provider table in the published [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database);
 - do not add database accessories to `config/deploy.yml`, and do not add provider credentials to
   `.kamal/secrets-common`;
 - a provider that runs a database server takes exactly one operator-managed secret, `DB_PASSWORD`;
@@ -98,7 +98,7 @@ The docs hub at `https://react-templates.net/docs/next-saas` is the canonical do
 its source is a sibling checkout:
 
 ```text
-../../ServiceStack/locode.dev/content/docs/next-saas/    relative to this repository
+../../ServiceStack/react-templates.net/content/docs/next-saas/    relative to this repository
 ```
 
 If that checkout is missing, say so and list the pages that need updating instead of silently
@@ -122,8 +122,8 @@ Rules for those edits:
 - state current behavior; do not narrate the change or reference a version that shipped it;
 - grep the whole `next-saas` docs tree for the old claim rather than editing only the obvious
   page, because the same fact is often stated in getting-started, features, and operations;
-- keep `README.md`, `DATABASE.md`, `CUSTOMIZE.md`, and this guide consistent with the hub; the
-  repository files are the short version and must not contradict it;
+- keep `README.md` and this guide consistent with the hub; the repository files are the short
+  version and must not contradict it;
 - run `npm run build` in the docs repository, which also catches a broken `meta.json`;
 - check that every internal `/docs/...` link and `#anchor` you add resolves.
 
@@ -138,7 +138,6 @@ MyApp/Configure.Saas.cs                      dependency setup and Stripe SDK gat
 MyApp/Migrations/Migration1000.cs            SaaS schema and default plan seed
 MyApp/appsettings.json                       global SaaS and Stripe policy
 MyApp/appsettings.Development.json           SQLite development default; .env overrides it
-DATABASE.md                                  step-by-step provider setup, local and production
 scripts/dev-db.sh                            runs the deployed database provider locally
 MyApp/Configure.ApiKeys.cs                   API key scopes
 MyApp/Configure.BackgroundJobs.cs            job infrastructure

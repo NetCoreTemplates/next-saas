@@ -51,7 +51,8 @@ password with DEV_DB_PASSWORD, the published port with DEV_DB_PORT, and, when th
 destination names a hosting arrangement rather than an engine (a managed instance, say),
 the engine to run locally with DEV_DB_ENGINE.
 
-Step-by-step, including the matching production configuration: DATABASE.md.
+Step-by-step, including the matching production configuration:
+https://react-templates.net/docs/next-saas/getting-started/choose-your-database.
 USAGE
 }
 

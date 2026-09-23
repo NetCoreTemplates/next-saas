@@ -47,12 +47,16 @@ Then use the reference guides, which you can read in any order:
 | [Operations](https://react-templates.net/docs/next-saas/operations) | Configuration, secrets, deployment, database and storage, health, job recovery, retention, backup and restore, troubleshooting |
 | [Security](https://react-templates.net/docs/next-saas/security) | Authentication, authorization, tenant isolation, API credentials, webhook security, support access, privacy, production security review |
 
-Two guides in this repository cover the first decisions you make, in order:
+Direct links to common topics:
 
-1. [DATABASE.md](DATABASE.md) — choose your database provider and configure it for local
-   development and production at the same time. Do this first. Published version:
-   [Choose your database](https://react-templates.net/docs/next-saas/getting-started/choose-your-database).
-2. [CUSTOMIZE.md](CUSTOMIZE.md) — product identity, plans, meters, and content.
+- **Core concepts:** [Architecture](https://react-templates.net/docs/next-saas/concepts/architecture), [organizations and tenancy](https://react-templates.net/docs/next-saas/concepts/organizations-and-tenancy), [plans and entitlements](https://react-templates.net/docs/next-saas/concepts/plans-and-entitlements), and [usage and quotas](https://react-templates.net/docs/next-saas/concepts/usage-and-quotas).
+- **Billing:** [Billing and subscriptions](https://react-templates.net/docs/next-saas/features/billing-and-subscriptions), [plans, pricing, and trials](https://react-templates.net/docs/next-saas/features/plans-pricing-trials), [coupons and promotion codes](https://react-templates.net/docs/next-saas/features/coupons), and [Stripe sandbox setup](https://react-templates.net/docs/next-saas/getting-started/connect-stripe-sandbox).
+- **Operations:** [Runbooks](https://react-templates.net/docs/next-saas/operations), [deployment](https://react-templates.net/docs/next-saas/operations/deployment), [observability and health](https://react-templates.net/docs/next-saas/operations/observability-and-health), [backup and restore](https://react-templates.net/docs/next-saas/operations/backup-and-restore), and [troubleshooting](https://react-templates.net/docs/next-saas/operations/troubleshooting).
+
+Make the first decisions with the published guides, in order:
+
+1. [Choose your database](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) — configure the same provider for local development and production.
+2. [Customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product) — update product identity, plans, meters, and content.
 
 The architectural and product decisions are recorded in [PLAN.md](PLAN.md), and [features.json](features.json) is a machine-readable map of the modules.
 
@@ -93,8 +97,7 @@ For a server provider this runs the same image as the deployment's accessory, wi
 `next_saas` database, the same unprivileged login, and the same initializer scripts, then writes
 the connection into your private `.env`, which the application reads in Development. SQLite starts no container and stays the zero-dependency default.
 
-**[DATABASE.md](DATABASE.md) is the step-by-step guide**, and it continues past local setup into
-configuring the same provider for production.
+The [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) continues past local setup into configuring the same provider for production.
 
 ### Step 3 — Create the schema
 
@@ -132,7 +135,7 @@ Sign in as `manager@email.com` for the populated Northstar Labs customer experie
 `admin@email.com` for Operations Center views across six example organizations. The command is
 idempotent, follows the database selected by `.env`, and refuses to run outside Development.
 
-Then customize the product itself: [CUSTOMIZE.md](CUSTOMIZE.md).
+Then [customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product).
 
 ## Runtime architecture
 
@@ -279,8 +282,7 @@ dotnet run --no-launch-profile --AppTasks=migrate
 
 ### Run the deployed database locally
 
-[DATABASE.md](DATABASE.md) walks through choosing a provider, running it locally, and
-configuring the same one for production. In short:
+The [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) walks through choosing a provider, running it locally, and configuring the same one for production. In short:
 
 ```bash
 ./scripts/dev-db.sh up        # start the provider in DB_PROVIDER and write the local config
