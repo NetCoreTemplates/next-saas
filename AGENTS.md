@@ -135,7 +135,7 @@ README.md                                    setup, Stripe, usage, and operation
 MyApp.ServiceModel/Saas.cs                   domain entities and API contracts
 MyApp.ServiceInterface/SaasServices.cs       workspace, usage, billing, and admin policy
 MyApp/Configure.Saas.cs                      dependency setup and Stripe SDK gateway
-MyApp/Migrations/Migration1001.cs            SaaS schema and default plan seed
+MyApp/Migrations/Migration1000.cs            SaaS schema and default plan seed
 MyApp/appsettings.json                       global SaaS and Stripe policy
 MyApp/appsettings.Development.json           SQLite development default; .env overrides it
 DATABASE.md                                  step-by-step provider setup, local and production

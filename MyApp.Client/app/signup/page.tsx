@@ -93,7 +93,7 @@ function SignUpContent() {
                                         value={organizationName} onChange={setOrganizationName}/>}
                                     <TextInput id="displayName" help="Your first and last name" autoComplete="name"
                                                value={displayName} onChange={setDisplayName}/>
-                                    <TextInput id="userName" autoComplete="email"
+                                    <TextInput id="userName" label="Email" type="email" placeholder="you@company.com" autoComplete="email"
                                                value={username} onChange={setUsername}/>
                                     <TextInput id="password" type="password" help="6 characters or more"
                                                autoComplete="new-password"
@@ -126,7 +126,7 @@ function SignUpContent() {
 
 export default function SignUp() {
     return (
-        <Page title="Sign Up">
+        <Page title="Create your account" description="Start on Free with no payment method. Upgrade whenever you need more capacity.">
             <Suspense fallback={<div>Loading...</div>}>
                 <SignUpContent />
             </Suspense>

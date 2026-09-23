@@ -8,6 +8,7 @@
         "build": "npm run ui:build",
         "secret:prod": "gh secret set APPSETTINGS_JSON < appsettings.Production.json",
         "migrate": "dotnet run --AppTasks=migrate",
+        "seed:example-data": "dotnet run --no-build --no-launch-profile --AppTasks=seed-example-data",
         "revert:last": "dotnet run --AppTasks=migrate.revert:last",
         "revert:all": "dotnet run --AppTasks=migrate.revert:all",
         "rerun:last": "npm run revert:last && npm run migrate",

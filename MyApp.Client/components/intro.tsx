@@ -11,10 +11,47 @@ const Feature = ({ icon, title, children }: { icon: React.ReactNode, title: stri
   <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{children}</p>
 </div>
 
-const Signal = ({ label, value, delta, bars }: { label: string, value: string, delta: string, bars: number[] }) => <div className="rounded-xl border border-white/10 bg-white/[.045] p-4">
-  <div className="flex items-start justify-between"><p className="text-xs text-slate-400">{label}</p><span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold text-[#86efcd]">{delta}</span></div>
-  <p className="mt-3 text-2xl font-semibold tracking-[-.04em] text-white">{value}</p>
-  <div className="mt-4 flex h-9 items-end gap-1">{bars.map((bar, i) => <span key={i} className="flex-1 rounded-sm bg-[#0b5cff]" style={{height:`${bar}%`,opacity:.35 + i * .08}} />)}</div>
+const sources = [
+  { n: 1, title: 'Data retention policy', path: 'policies/retention.pdf', section: '§4.2 Deleted content', score: '0.94' },
+  { n: 2, title: 'Administrator guide', path: 'guides/admin/exports.md', section: 'Export expiry', score: '0.91' },
+]
+
+const delay = (d: string) => ({ '--d': d }) as React.CSSProperties
+
+const Cite = ({ n, d }: { n: number, d: string }) => <a href={`#source-${n}`} className="cite-link mx-0.5 inline-flex align-[1px]" aria-label={`Source ${n}`}>
+  <span className="cite-marker cite-pulse grid h-[18px] min-w-[18px] place-items-center rounded-[5px] border border-[#86efcd]/40 bg-[#86efcd]/10 px-1 font-mono text-[10px] font-semibold leading-none text-[#86efcd] transition-colors" style={delay(d)}>{n}</span>
+</a>
+
+/** The hero's thesis: an answer is only as good as the sources you can open behind it. */
+const GroundedAnswer = () => <div className="surface-shadow relative overflow-hidden rounded-[18px] border border-slate-200 bg-[#091426] text-white ring-1 ring-white/10 dark:border-white/10">
+  <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-3.5">
+    <div className="flex min-w-0 items-center gap-2.5"><span className="h-2 w-2 shrink-0 rounded-full bg-[#86efcd] shadow-[0_0_0_4px_rgba(134,239,205,.1)]" /><span className="truncate text-xs font-medium text-slate-300">Customer documentation</span></div>
+    <span className="shrink-0 font-mono text-[10px] text-slate-500">48,212 docs in scope</span>
+  </div>
+
+  <div className="space-y-5 p-5 sm:p-6">
+    <div className="cite-in flex justify-end" style={delay('.25s')}>
+      <p className="max-w-[85%] rounded-[14px] rounded-br-[4px] bg-[#0b5cff] px-4 py-2.5 text-sm leading-6">How long do we keep files after someone deletes them?</p>
+    </div>
+    <div className="cite-in flex gap-3" style={delay('.6s')}>
+      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10"><Bot className="h-4 w-4 text-[#86efcd]" /></span>
+      <p className="text-[15px] leading-7 text-slate-200">Deleted files stay recoverable for <strong className="font-semibold text-white">7 days</strong>, then they are permanently removed from storage and the search index<Cite n={1} d="1.1s" />. Organization exports follow the same window: the download link expires after 7 days<Cite n={2} d="1.35s" />.</p>
+    </div>
+  </div>
+
+  <div className="border-t border-white/10 bg-white/[.025] px-5 py-4 sm:px-6">
+    <p className="mb-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">Sources</p>
+    <ol className="space-y-2">{sources.map((s, i) => <li key={s.n} id={`source-${s.n}`} className="cite-in grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[10px] border border-white/10 bg-white/[.035] px-3 py-2.5" style={delay(`${1.1 + i * .25}s`)}>
+      <span className="grid h-[18px] min-w-[18px] place-items-center rounded-[5px] bg-[#86efcd]/10 font-mono text-[10px] font-semibold text-[#86efcd]">{s.n}</span>
+      <div className="min-w-0"><p className="truncate text-xs font-semibold text-slate-100">{s.title} <span className="font-normal text-slate-400">· {s.section}</span></p><p className="mt-0.5 truncate font-mono text-[10px] text-slate-500">{s.path}</p></div>
+      <span className="font-mono text-[10px] text-slate-400" title="Retrieval relevance">{s.score}</span>
+    </li>)}</ol>
+  </div>
+
+  <div className="flex items-center justify-between gap-4 border-t border-white/10 px-5 py-3 font-mono text-[10px] text-slate-500 sm:px-6">
+    <span className="inline-flex items-center gap-1.5"><Check className="h-3 w-3 text-[#86efcd]" />2 of 2 claims cited</span>
+    <span>answered in 812 ms</span>
+  </div>
 </div>
 
 export default function Intro() {
@@ -22,10 +59,10 @@ export default function Intro() {
     <section className="relative overflow-hidden bg-white dark:bg-[#07101f]">
       <div className="enterprise-grid pointer-events-none absolute inset-0" />
       <div className="pointer-events-none absolute left-[48%] top-[-28rem] h-[48rem] w-[48rem] rounded-full bg-blue-500/10 blur-3xl dark:bg-blue-500/15" />
-      <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-20 lg:grid-cols-[.9fr_1.1fr] lg:px-8 lg:pb-28 lg:pt-28">
+      <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-20 lg:grid-cols-[1.05fr_.95fr] lg:px-8 lg:pb-28 lg:pt-24">
         <div className="animate-rise">
           <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-[#0b5cff] dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300"><Sparkles className="h-3.5 w-3.5" /> Hosted document intelligence</div>
-          <h1 className="max-w-3xl text-5xl font-semibold leading-[1.02] tracking-[-.055em] text-slate-950 sm:text-6xl lg:text-[4.65rem] dark:text-white">Your documents. <span className="text-[#0b5cff]">Answers you can verify.</span></h1>
+          <h1 className="max-w-3xl text-[2.75rem] font-semibold leading-[1.02] tracking-[-.055em] text-balance text-slate-950 sm:text-6xl xl:text-[4.4rem] dark:text-white">Your documents. <span className="text-[#0b5cff] dark:text-[#5b8cff]">Answers you can verify.</span></h1>
           <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600 dark:text-slate-300">Import files, folders, and websites into managed knowledge bases. Publish citation-backed AI assistants, instant search, and actionable content analytics from one secure catalogue.</p>
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <Link href="/signup" className="inline-flex items-center justify-center gap-2 rounded-[11px] bg-[#0b5cff] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(11,92,255,.25)] transition hover:-translate-y-px hover:bg-[#084dcc]">Start free <ArrowRight className="h-4 w-4" /></Link>
@@ -36,24 +73,10 @@ export default function Intro() {
 
         <div className="animate-rise-delay relative lg:pl-5">
           <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-br from-blue-500/15 via-transparent to-emerald-300/20 blur-2xl" />
-          <div className="surface-shadow relative overflow-hidden rounded-[18px] border border-slate-200 bg-[#091426] text-white ring-1 ring-white/10 dark:border-white/10">
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#86efcd] shadow-[0_0_0_4px_rgba(134,239,205,.1)]" /><span className="text-xs font-medium text-slate-300">{product.name} Knowledge Cloud</span></div><span className="text-[10px] uppercase tracking-[.18em] text-slate-500">Live</span></div>
-            <div className="grid gap-4 p-4 sm:grid-cols-2">
-              <Signal label="Documents indexed" value="48.2K" delta="+12.4%" bars={[24,42,35,56,48,68,63,78,72,89]} />
-              <Signal label="Search success" value="94.8%" delta="+3.1%" bars={[40,45,48,54,60,58,72,76,82,92]} />
-            </div>
-            <div className="px-4 pb-4">
-              <div className="rounded-xl border border-white/10 bg-white/[.045] p-4">
-                <div className="flex items-center justify-between"><div><p className="text-xs text-slate-400">AI questions this month</p><p className="mt-1 text-sm font-semibold">Product knowledge base</p></div><p className="text-sm font-semibold text-[#86efcd]">68%</p></div>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full w-[68%] rounded-full bg-gradient-to-r from-[#0b5cff] to-[#86efcd]" /></div>
-                <div className="mt-4 grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-4">{[['17K','asked'],['8K','available'],['12 days','remaining']].map(([v,l]) => <div key={l} className="px-3 first:pl-0"><p className="text-sm font-semibold">{v}</p><p className="mt-1 text-[10px] text-slate-500">{l}</p></div>)}</div>
-              </div>
-            </div>
-            <div className="metric-stripes h-8 border-t border-white/5" />
-          </div>
+          <GroundedAnswer />
         </div>
       </div>
-      <div className="relative mx-auto max-w-7xl border-t border-slate-200 px-5 py-8 lg:px-8 dark:border-white/10"><p className="text-center text-[10px] font-bold uppercase tracking-[.22em] text-slate-400">Built for high-trust teams at every stage</p><div className="mt-6 grid grid-cols-2 gap-6 text-center text-sm font-bold tracking-[-.02em] text-slate-400 sm:grid-cols-5"><span>APERTURE</span><span>KINETIC</span><span>CATALYST</span><span>STRATUM</span><span>MONUMENT</span></div></div>
+      <div className="relative mx-auto max-w-7xl border-t border-slate-200 px-5 py-8 lg:px-8 dark:border-white/10"><p className="text-center text-[10px] font-bold uppercase tracking-[.22em] text-slate-400">Built for high-trust teams at every stage</p><div className="mt-6 flex flex-wrap justify-center gap-x-10 gap-y-4 text-sm font-bold tracking-[.08em] text-slate-400 sm:justify-between dark:text-slate-500"><span>APERTURE</span><span>KINETIC</span><span>CATALYST</span><span>STRATUM</span><span>MONUMENT</span></div></div>
     </section>
 
     <section id="platform" className="bg-[#f6f8fb] py-24 dark:bg-[#0a1424] lg:py-32">

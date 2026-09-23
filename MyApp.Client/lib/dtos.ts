@@ -1,5 +1,5 @@
 /* Options:
-Date: 2026-09-19 23:18:17
+Date: 2026-09-23 10:01:26
 Version: 10.21
 Tip: To override a DTO option, remove "//" prefix before updating
 BaseUrl: http://127.0.0.1:5005
@@ -1935,9 +1935,6 @@ export class RequestWorkspaceDeletion implements IReturn<WorkspaceLifecycleReque
 {
     // @Validate(Validator="NotEmpty")
     public confirmation: string;
-
-    // @Validate(Validator="NotEmpty")
-    public currentPassword: string;
 
     public constructor(init?: Partial<RequestWorkspaceDeletion>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'RequestWorkspaceDeletion'; }

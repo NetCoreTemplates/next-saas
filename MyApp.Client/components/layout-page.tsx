@@ -6,12 +6,13 @@ import Meta from "./meta"
 
 type Props = {
   title: string,
+  description?: string,
   className?: string,
   bodyClass?: string,
   children: React.ReactNode,
 }
 
-const Page: FC<Props> = ({ title, className, bodyClass, children }) => {
+const Page: FC<Props> = ({ title, description = "Continue to your organization.", className, bodyClass, children }) => {
   return (
     <>
       <Meta />
@@ -26,7 +27,7 @@ const Page: FC<Props> = ({ title, className, bodyClass, children }) => {
             <div className={bodyClass ?? 'max-w-xl'}>
               <p className="text-xs font-bold uppercase tracking-[.2em] text-[#0b5cff] dark:text-[#86efcd]">Secure organization access</p>
               <h1 className="my-4 text-4xl font-semibold tracking-[-.045em] text-slate-950 dark:text-white">{title}</h1>
-              <p className="mb-8 text-sm leading-6 text-slate-500 dark:text-slate-400">Continue to your organization.</p>
+              <p className="mb-8 text-sm leading-6 text-slate-500 dark:text-slate-400">{description}</p>
               {children}
             </div>
           </div>

@@ -23,6 +23,8 @@ const API_URL = isProd ? DEPLOY_API : (buildLocal ? '' : target)
  * @type {import('next').NextConfig}
  **/
 const nextConfig = {
+    devIndicators: false,
+
     // Use the compiler API so production builds are reliable on newer Node runtimes.
     experimental: {
         useTypeScriptCli: false

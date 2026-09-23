@@ -85,7 +85,31 @@ body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSyst
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 .animate-rise { animation: rise .7s cubic-bezier(.2,.75,.25,1) both; }
 .animate-rise-delay { animation: rise .7s .12s cubic-bezier(.2,.75,.25,1) both; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .animate-rise,.animate-rise-delay { animation: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.animate-fade { animation: fade .2s ease-out both; }
+.animate-sheet { animation: sheet .32s cubic-bezier(.2,.8,.2,1) both; }
+.meter-fill { transition: width .6s cubic-bezier(.2,.75,.25,1); }
+
+/* Ledger figures: numbers in metrics and tables line up column to column. */
+.tabular, .font-mono { font-variant-numeric: tabular-nums; }
+
+/* Keyboard focus is always visible and always on-brand. */
+:where(a, button, [role="button"], input, select, textarea, summary):focus-visible { outline: 2px solid #0b5cff; outline-offset: 2px; }
+.dark :where(a, button, [role="button"], input, select, textarea, summary):focus-visible { outline-color: #86efcd; }
+
+/* Hero: a grounded answer resolves, then each citation it relies on lights up in turn. */
+@keyframes cite-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes cite-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(134,239,205,0); } 40% { box-shadow: 0 0 0 4px rgba(134,239,205,.18); } }
+.cite-in { animation: cite-in .55s cubic-bezier(.2,.75,.25,1) both; animation-delay: var(--d, 0s); }
+.cite-pulse { animation: cite-pulse 1.4s ease-out both; animation-delay: var(--d, 0s); }
+.cite-link:hover .cite-marker, .cite-link:focus-visible .cite-marker { background: #86efcd; color: #07101f; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .animate-rise, .animate-rise-delay, .animate-fade, .animate-sheet, .cite-in, .cite-pulse { animation: none; }
+  .meter-fill { transition: none; }
+}
 
 @theme dark {
   /* shadcn/ui colors - Dark mode */

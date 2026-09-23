@@ -10,7 +10,7 @@ public class ArchitectureGuardTests
     public void Every_OrmLite_table_is_classified_in_the_feature_manifest()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
-        var migration = File.ReadAllText(Path.Combine(root, "MyApp", "Migrations", "Migration1001.cs"));
+        var migration = File.ReadAllText(Path.Combine(root, "MyApp", "Migrations", "Migration1000.cs"));
         var createdTables = Regex.Matches(migration, @"CreateTable<(?<name>[^>]+)>")
             .Select(x => x.Groups["name"].Value).ToHashSet(StringComparer.Ordinal);
 

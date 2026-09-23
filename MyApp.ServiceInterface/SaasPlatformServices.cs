@@ -924,10 +924,6 @@ public class SaasPlatformServices(
             throw new HttpError(409, "ActiveSubscriptionMustBeCanceled", "Cancel the paid subscription from Billing before scheduling organization deletion.");
         if (!request.Confirmation.Equals(context.Workspace.Name, StringComparison.Ordinal))
             throw new HttpError(400, "DeletionConfirmationMismatch", "Enter the exact organization name to confirm deletion.");
-        var user = await userManager.FindByIdAsync(context.UserId)
-            ?? throw HttpError.Unauthorized("Your account could not be verified.");
-        if (!await userManager.CheckPasswordAsync(user, request.CurrentPassword))
-            throw new HttpError(403, "RecentAuthenticationRequired", "Enter your current password to authorize organization deletion.");
         var retention = Db.SingleById<WorkspaceRetentionPolicy>(context.Workspace.Id);
         if (retention?.LegalHold == true)
             throw new HttpError(409, "WorkspaceLegalHold", "This organization is under a legal hold and cannot be deleted. Contact an administrator.");

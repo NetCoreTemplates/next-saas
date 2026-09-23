@@ -121,6 +121,17 @@ Open `https://localhost:5001`. Seeded development accounts all use `p@55wOrd`:
 - `employee@email.com` — standard customer flow;
 - `test@email.com` — minimal authenticated account.
 
+For screenshots and product tours, add a repeatable set of example organizations, usage history,
+documents, team members, notifications, and operator activity:
+
+```bash
+./scripts/seed-example-data.sh
+```
+
+Sign in as `manager@email.com` for the populated Northstar Labs customer experience, or as
+`admin@email.com` for Operations Center views across six example organizations. The command is
+idempotent, follows the database selected by `.env`, and refuses to run outside Development.
+
 Then customize the product itself: [CUSTOMIZE.md](CUSTOMIZE.md).
 
 ## Runtime architecture

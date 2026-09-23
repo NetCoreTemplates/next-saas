@@ -50,22 +50,20 @@ function SignInContent() {
                             <ErrorSummary except="userName,password"/>
                             <div className="space-y-6 bg-white px-6 py-7 dark:bg-[#0c1729]">
                                 <div className="flex flex-col gap-y-4">
-                                    <TextInput id="userName" help="Email you signed up with" autoComplete="email"
+                                    <TextInput id="userName" label="Email" type="email" placeholder="you@company.com" autoComplete="email"
                                                value={userName} onChange={setUserName}/>
-                                    <TextInput id="password" type="password" help="6 characters or more"
+                                    <TextInput id="password" type="password" label="Password" placeholder="Your password"
                                                autoComplete="current-password"
                                                value={password} onChange={setPassword}/>
                                 </div>
 
                                 <div>
-                                    <PrimaryButton className="w-full !bg-[#0b5cff] !py-3">Log in</PrimaryButton>
+                                    <PrimaryButton className="w-full !bg-[#0b5cff] !py-3">Sign in</PrimaryButton>
                                 </div>
 
-                                <div className="mt-8 text-sm">
-                                    <p className="mb-3">
-                                        <Link className="font-semibold" href={returnUrl ? `/signup?redirect=${encodeURIComponent(returnUrl)}` : '/signup'}>Register as a new user</Link>
-                                    </p>
-                                </div>
+                                <p className="border-t border-slate-100 pt-5 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                                    New here? <Link className="font-semibold text-[#0b5cff] hover:underline dark:text-blue-300" href={returnUrl ? `/signup?redirect=${encodeURIComponent(returnUrl)}` : '/signup'}>Create a free account</Link>
+                                </p>
                             </div>
 
                         </div>
@@ -73,7 +71,7 @@ function SignInContent() {
                 </section>
             </ApiStateContext.Provider>
             <div className="mt-7 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-white/10 dark:bg-white/[.035]">
-                <h3 className="mb-3 text-xs font-semibold text-slate-500">Development accounts</h3>
+                <h3 className="mb-1 text-xs font-semibold text-slate-500">Development accounts</h3><p className="mb-3 text-xs text-slate-400">Click one to fill the form with a seeded account.</p>
                 <div className="flex flex-wrap max-w-lg gap-2">
                     <SecondaryButton onClick={() => setUser('admin@email.com')}>
                         admin@email.com
@@ -95,7 +93,7 @@ function SignInContent() {
 
 export default function SignIn() {
     return (
-        <Page title="Use a local account to log in.">
+        <Page title="Sign in" description="Welcome back. Continue to your documents, usage, and billing.">
             <Suspense fallback={<div>Loading...</div>}>
                 <SignInContent />
             </Suspense>

@@ -53,7 +53,7 @@ function BillingPage() {
 
   return <AppShell workspaceName={data?.workspace?.name}>
     <PageHeading
-      eyebrow="Commercial relationship"
+      eyebrow="Subscription"
       title="Plans & billing"
       description={`Manage your ${data?.workspace?.kind === WorkspaceKind.Individual ? 'account' : 'organization'} plan. Stripe securely handles payment details, invoices, credits, and tax.`}
       action={<button onClick={portal} disabled={busy} className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50 dark:border-white/15 dark:bg-white/5">
@@ -87,8 +87,8 @@ function BillingPage() {
         </div>
       </Panel>
       <div className="space-y-5">
-        <Panel className="p-6"><CreditCard className="h-5 w-5 text-[#0b5cff]" /><h2 className="mt-4 font-semibold">Payment method</h2><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Payment methods are stored and managed securely by Stripe.</p><button onClick={portal} disabled={busy} className="mt-4 text-sm font-semibold text-[#0b5cff] disabled:opacity-50">Manage in Stripe →</button></Panel>
-        <Panel className="p-6"><ReceiptText className="h-5 w-5 text-[#0b5cff]" /><h2 className="mt-4 font-semibold">Invoices</h2><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Download tax-ready invoice PDFs from the hosted billing portal.</p></Panel>
+        <Panel className="p-6"><CreditCard className="h-5 w-5 text-[#0b5cff]" /><h2 className="mt-4 font-semibold">Payment method</h2><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Payment methods are stored and managed securely by Stripe.</p><button onClick={portal} disabled={busy} className="mt-4 text-sm font-semibold text-[#0b5cff] hover:underline disabled:opacity-50 dark:text-blue-300">Manage in Stripe →</button></Panel>
+        <Panel className="p-6"><ReceiptText className="h-5 w-5 text-[#0b5cff]" /><h2 className="mt-4 font-semibold">Invoices</h2><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Download tax-ready invoice PDFs from the hosted billing portal.</p><button onClick={portal} disabled={busy} className="mt-4 text-sm font-semibold text-[#0b5cff] hover:underline disabled:opacity-50 dark:text-blue-300">View invoices →</button></Panel>
       </div>
     </div>
     <Panel className="mt-5 p-6"><div className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-[#0b5cff]" /><div><h2 className="font-semibold">Current billing period</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{data?.subscription?.periodStart ? new Date(data.subscription.periodStart).toLocaleDateString() : '—'} — {data?.subscription?.periodEnd ? new Date(data.subscription.periodEnd).toLocaleDateString() : '—'}</p></div></div></Panel>

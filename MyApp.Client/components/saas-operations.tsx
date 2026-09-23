@@ -66,19 +66,19 @@ export default function SaasOperations({view='overview'}:{view?:SaasOperationsVi
 </div>
 <UsersRound className="h-5 w-5 text-[#0b5cff]"/>
 </div>
-<div className="mt-6 space-y-4">{analytics?.planMix?.map((item,i)=>
+<div className="mt-6 space-y-4">{analytics?.planMix?.map(item=>
 <div key={item.key}>
 <div className="flex justify-between text-xs">
 <span>{item.label}</span>
 <strong>{fmt(item.units)}</strong>
 </div>
 <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
-<div className="h-full rounded-full bg-gradient-to-r from-[#0b5cff] to-[#86efcd]" style={{width:`${Math.max(12,100-i*18)}%`}}/>
+<div className="meter-fill h-full rounded-full bg-gradient-to-r from-[#0b5cff] to-[#86efcd]" style={{width:`${Math.max(3,((item.units??0)/Math.max(1,...(analytics?.planMix??[]).map(x=>x.units??0)))*100)}%`}}/>
 </div>
 </div>)}</div>
 <div className="mt-6 flex items-center justify-between rounded-xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
 <span className="text-xs font-semibold">Quota pressure</span>
-<strong>{analytics?.quotaPressure?.length??0} organizations</strong>
+<strong>{analytics?.quotaPressure?.length??0} {(analytics?.quotaPressure?.length??0)===1?'organization':'organizations'}</strong>
 </div>
 </Panel>
 </div>}

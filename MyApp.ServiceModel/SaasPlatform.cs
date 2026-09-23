@@ -689,7 +689,6 @@ public class CreateWorkspaceExport : IPost, IReturn<WorkspaceLifecycleRequest> {
 public class RequestWorkspaceDeletion : IPost, IReturn<WorkspaceLifecycleRequest>
 {
     [ValidateNotEmpty] public string Confirmation { get; set; } = "";
-    [ValidateNotEmpty] public string CurrentPassword { get; set; } = "";
 }
 
 [ValidateIsAuthenticated]

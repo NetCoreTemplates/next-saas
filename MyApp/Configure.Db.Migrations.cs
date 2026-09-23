@@ -74,6 +74,15 @@ public class ConfigureDbMigrations : IHostingStartup
             AppTasks.Register("migrate", _ => RunMigrations());
             AppTasks.Register("migrate.revert", args => migrator.Revert(args[0]));
             AppTasks.Register("migrate.rerun", args => migrator.Rerun(args[0]));
+            AppTasks.Register("seed-example-data", _ => {
+                var services = appHost.GetApplicationServices();
+                var environment = services.GetRequiredService<IHostEnvironment>();
+                if (!environment.IsDevelopment())
+                    throw new InvalidOperationException("Example data can only be seeded in Development.");
+
+                RunMigrations();
+                ExampleDataSeeder.SeedAsync(services).GetAwaiter().GetResult();
+            });
             AppTasks.Run();
 
             // To ensure there's a valid schema before starting, check for an empty database and run migrations if necessary.
