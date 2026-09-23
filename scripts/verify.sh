@@ -74,8 +74,8 @@ kill "$VERIFY_PID"
 wait "$VERIFY_PID" 2>/dev/null || true
 VERIFY_PID=""
 PLAN_COUNT="$(sqlite3 "$VERIFY_TEMP/empty.db" "select count(*) from SaasPlan;")"
-if [[ "$PLAN_COUNT" != "4" ]]; then
-  echo "Empty-state migration did not seed the four reference plans." >&2
+if [[ "$PLAN_COUNT" != "5" ]]; then
+  echo "Empty-state migration did not seed the five reference plans." >&2
   exit 1
 fi
 PREFERENCE_TABLE="$(sqlite3 "$VERIFY_TEMP/empty.db" "select count(*) from sqlite_master where type='table' and name='UserWorkspacePreference';")"
