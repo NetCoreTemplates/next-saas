@@ -17,7 +17,7 @@ Registration creates either a private **Individual** account or a team-ready **B
 - ServiceStack API Keys with workspace and usage scopes;
 - customer overview, documents, usage analytics, billing, API keys, team, audit, notifications, and lifecycle settings;
 - role-gated SaaS analytics, customer 360, support/operations tooling, plus ServiceStack Admin UI and Admin Database;
-- customer-specific entitlement overrides with business reason and audit actor;
+- customer-specific entitlement overrides with business reason and audit user;
 - Background Jobs for Stripe webhooks, file deletion, rollups, snapshots, notifications, exports, and staged workspace deletion;
 - request logging, profiling, OpenAPI/Scalar, liveness/readiness health checks, and generated TypeScript DTOs;
 - static Next.js production output served by the single ASP.NET Core runtime.
@@ -132,8 +132,8 @@ documents, team members, notifications, and operator activity:
 ```
 
 Sign in as `manager@email.com` for the populated Northstar Labs customer experience, or as
-`admin@email.com` for Operations Center views across six example organizations. The command is
-idempotent, follows the database selected by `.env`, and refuses to run outside Development.
+`admin@email.com` for Operations Center views across fifty example organizations with a year of
+subscription, revenue, and usage history. The command is idempotent, follows the database selected by `.env`, and refuses to run outside Development.
 
 Then [customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product).
 

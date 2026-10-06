@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useContext, useEffect } from "react"
+import React, { useContext, useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth, Loading } from "@servicestack/react"
-import { client, Routes } from "./gateway"
+import { client, Routes, getTabWorkspaceId, loadTabWorkspaceId, setTabWorkspaceId } from "./gateway"
 import { Authenticate } from "@/lib/dtos"
 import { AuthReadyContext } from "@/app/providers"
 
@@ -44,12 +44,25 @@ export function ValidateAuth<TOriginalProps extends {}>(Component:React.FC<TOrig
             }
         }, [authReady, user, pathname, router])
 
+        // APIs for an organization are sent its id, so the page waits until this tab's organization is known
+        const [workspaceId, setWorkspaceId] = useState(getTabWorkspaceId)
+        useEffect(() => {
+            if (!authReady || !isAuthenticated || workspaceId) return
+            let active = true
+            void loadTabWorkspaceId().then(id => { if (active) setWorkspaceId(id) })
+            return () => { active = false }
+        }, [authReady, isAuthenticated, workspaceId])
+
         if (!authReady) {
             return <Redirecting />
         }
 
         if (shouldRedirect()) {
             return <Redirecting />
+        }
+
+        if (!workspaceId) {
+            return <Loading className="py-2 pl-4">loading ...</Loading>
         }
 
         return <Component {...props} />
@@ -71,6 +84,7 @@ export function appAuth() {
     }
     async function signOut(redirectTo?:string) {
         await client.post(new Authenticate({ provider: 'logout' }))
+        setTabWorkspaceId(undefined)
         authState.signOut()
         if (redirectTo) {
             router.push(redirectTo)

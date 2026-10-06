@@ -1,10 +1,12 @@
 'use client'
 
+import { tabWorkspaceId } from '@/lib/gateway'
 import { FormEvent, useState } from 'react'
 import { useClient } from '@servicestack/react'
 import { Building2, ExternalLink, Plus, UserRound } from 'lucide-react'
 import AppShell, { PageHeading, Panel } from '@/components/app-shell'
 import { ValidateAuth, appAuth } from '@/lib/auth'
+import { setTabWorkspaceId } from '@/lib/gateway'
 import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
 import { CreateOrganization, UpdateWorkspaceProfile, WorkspaceKind } from '@/lib/dtos'
 import WorkspaceLifecycle from '@/components/workspace-lifecycle'
@@ -23,8 +25,7 @@ function SettingsPage() {
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const api = await client.api(new UpdateWorkspaceProfile({
-      name: String(form.get('name')), slug: String(form.get('slug')),
+    const api = await client.api(new UpdateWorkspaceProfile({ workspaceId: tabWorkspaceId(), name: String(form.get('name')), slug: String(form.get('slug')),
       billingEmail: String(form.get('billingEmail')),
     }))
     setNotice(api.succeeded ? `${individual ? 'Account' : 'Organization'} saved.` : api.error?.message)
@@ -40,7 +41,7 @@ function SettingsPage() {
       name: String(form.get('organizationName')),
       billingEmail: String(form.get('organizationBillingEmail') || '') || undefined,
     }))
-    if (api.succeeded) { window.location.href = '/dashboard'; return }
+    if (api.succeeded) { setTabWorkspaceId(api.response?.workspace?.id); window.location.href = '/dashboard'; return }
     setCreateNotice(api.error?.message ?? 'Unable to create the organization.')
     setCreating(false)
   }

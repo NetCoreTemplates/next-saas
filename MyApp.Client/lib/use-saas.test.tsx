@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/gateway', () => ({
   client: { api: mocks.api },
+  tabWorkspaceId: () => 'workspace-1',
 }))
 
 import { useSaasDashboard, useUsageAnalytics } from './use-saas'

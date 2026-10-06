@@ -114,18 +114,55 @@ public class SaasSecurityTests
     [Test]
     public void Api_rate_limits_are_isolated_by_organization_and_credential()
     {
-        var limiter = new MyApp.SaasApiRateLimiter(new SaasConfig { ApiKeyRequestsPerMinute = 2 });
+        var limiter = new MyApp.SaasApiRateLimiter(new SaasConfig { ApiKeyRequestsPerMinute = 2, OrganizationApiRequestsPerMinute = 100 });
         var now = DateTime.UtcNow;
 
         Assert.Multiple(() => {
-            Assert.That(limiter.TryAcquire("org-a", "ak-one", now, out _), Is.True);
-            Assert.That(limiter.TryAcquire("org-a", "ak-one", now, out _), Is.True);
-            Assert.That(limiter.TryAcquire("org-a", "ak-one", now, out var retryAfter), Is.False);
+            Assert.That(limiter.TryAcquire("org-a", "ak-one", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-one", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-one", "", now, out var retryAfter), Is.False);
             Assert.That(retryAfter, Is.GreaterThan(0));
-            Assert.That(limiter.TryAcquire("org-b", "ak-one", now, out _), Is.True);
-            Assert.That(limiter.TryAcquire("org-a", "ak-two", now, out _), Is.True);
-            Assert.That(limiter.TryAcquire("org-a", "ak-one", now.AddMinutes(1), out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-b", "ak-one", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-two", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-one", "", now.AddMinutes(1), out _), Is.True);
         });
+    }
+
+    [Test]
+    public void An_organization_cannot_raise_its_api_rate_limit_with_more_credentials()
+    {
+        var limiter = new MyApp.SaasApiRateLimiter(new SaasConfig { ApiKeyRequestsPerMinute = 2, OrganizationApiRequestsPerMinute = 3 });
+        var now = DateTime.UtcNow;
+
+        Assert.Multiple(() => {
+            Assert.That(limiter.TryAcquire("org-a", "ak-one", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-two", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-three", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-four", "", now, out var retryAfter), Is.False);
+            Assert.That(retryAfter, Is.GreaterThan(0));
+            // A rejected request isn't counted against the credential, and other organizations aren't affected
+            Assert.That(limiter.TryAcquire("org-b", "ak-four", "", now, out _), Is.True);
+            Assert.That(limiter.TryAcquire("org-a", "ak-four", "", now.AddMinutes(1), out _), Is.True);
+        });
+    }
+
+    [Test]
+    public void Unknown_api_credentials_share_a_limit_and_do_not_grow_the_limiter()
+    {
+        var limiter = new MyApp.SaasApiRateLimiter(new SaasConfig { ApiKeyRequestsPerMinute = 5, OrganizationApiRequestsPerMinute = 100 });
+        var now = DateTime.UtcNow;
+
+        var accepted = Enumerable.Range(0, 50).Count(i => limiter.TryAcquire(null, $"ak-guess-{i}", "203.0.113.7", now, out _));
+
+        Assert.Multiple(() => {
+            Assert.That(accepted, Is.EqualTo(5));
+            Assert.That(limiter.WindowCount, Is.EqualTo(1));
+            Assert.That(limiter.TryAcquire(null, "ak-guess", "203.0.113.8", now, out _), Is.True);
+        });
+
+        // Windows that have ended are removed
+        limiter.TryAcquire("org-a", "ak-one", "", now.AddMinutes(5), out _);
+        Assert.That(limiter.WindowCount, Is.EqualTo(2));
     }
 
     [TestCase(typeof(RecordUsage), "api.access")]
@@ -151,6 +188,7 @@ public class SaasSecurityTests
         db.CreateTable<SaasPlanVersion>();
         db.CreateTable<BillingSubscription>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
         var now = DateTime.UtcNow;
         db.Insert(new SaasPlan { Id = "plan.free", Code = "free", Name = "Free", CreatedDate = now, ModifiedDate = now });
         db.Insert(new SaasPlanVersion { Id = "plan.free.v1", PlanId = "plan.free", Version = 1, Status = PlanVersionStatus.Published, CreatedDate = now, ModifiedDate = now });
@@ -189,18 +227,20 @@ public class SaasSecurityTests
         db.Insert(new UserWorkspacePreference { UserId = "user-1", ActiveWorkspaceId = "organization-b", CreatedDate = now, ModifiedDate = now });
         db.Insert(new ApiKeysFeature.ApiKey { Key = "ak-organization-a", UserId = "user-1", RefIdStr = "organization-a", CreatedDate = now });
 
-        var resolver = new WorkspaceContextResolver(new SaasManager(new SaasConfig()));
-        var context = resolver.ResolveApiKey(db, new AuthUserSession { UserAuthId = "user-1" }, "ak-organization-a");
+        // What ForRequest() applies to the connections of a request sent with the API key
+        db.SetUserId("user-1").ForWorkspace("organization-a");
+        var manager = new SaasManager(new SaasConfig());
+        var (workspace, member) = manager.AssertMembership(db, "organization-a", WorkspaceAccess.Account);
 
         Assert.Multiple(() => {
-            Assert.That(context.Workspace.Id, Is.EqualTo("organization-a"));
-            Assert.That(context.Member.Id, Is.EqualTo("member-a"));
+            Assert.That(workspace.Id, Is.EqualTo("organization-a"));
+            Assert.That(member.Id, Is.EqualTo("member-a"));
             Assert.That(db.SingleById<UserWorkspacePreference>("user-1")!.ActiveWorkspaceId, Is.EqualTo("organization-b"));
         });
     }
 
     [Test]
-    public void Api_key_requires_an_active_membership_and_an_explicit_organization()
+    public void Api_key_requires_an_active_membership_of_its_organization()
     {
         var factory = new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider);
         using var db = factory.Open();
@@ -209,18 +249,14 @@ public class SaasSecurityTests
         db.CreateTable<ApiKeysFeature.ApiKey>();
         var now = DateTime.UtcNow;
         db.Insert(new Workspace { Id = "organization-a", Name = "A", Slug = "a", CreatedDate = now, ModifiedDate = now });
-        db.Insert(new ApiKeysFeature.ApiKey { Key = "ak-legacy", UserId = "user-1", CreatedDate = now });
         db.Insert(new ApiKeysFeature.ApiKey { Key = "ak-orphaned", UserId = "user-1", RefIdStr = "organization-a", CreatedDate = now });
 
-        var resolver = new WorkspaceContextResolver(new SaasManager(new SaasConfig()));
-        var session = new AuthUserSession { UserAuthId = "user-1" };
+        // What ForRequest() applies to the connections of a request sent with the API key
+        db.SetUserId("user-1").ForWorkspace("organization-a");
+        var manager = new SaasManager(new SaasConfig());
 
-        Assert.Multiple(() => {
-            Assert.That(Assert.Throws<HttpError>(() => resolver.ResolveApiKey(db, session, "ak-legacy"))!.ErrorCode,
-                Is.EqualTo("OrganizationKeyRequired"));
-            Assert.That(Assert.Throws<HttpError>(() => resolver.ResolveApiKey(db, session, "ak-orphaned"))!.ErrorCode,
-                Is.EqualTo("WorkspaceAccessDenied"));
-        });
+        Assert.That(Assert.Throws<HttpError>(() => manager.AssertMembership(db, "organization-a", WorkspaceAccess.Account))!.ErrorCode,
+            Is.EqualTo("WorkspaceAccessDenied"));
     }
 
     [TestCase(WorkspaceMemberRole.Owner, true)]
@@ -359,6 +395,7 @@ public class SaasSecurityTests
                 db.CreateTable<BillingSubscription>();
                 db.CreateTable<WorkspaceLifecycleRequest>();
                 db.CreateTable<SaasAuditEvent>();
+                db.CreateTable<PlatformAuditEvent>();
                 var now = DateTime.UtcNow;
                 db.Insert(new Workspace { Id = "individual-1", Name = "Ada", Slug = "ada", Kind = WorkspaceKind.Individual, CreatedDate = now, ModifiedDate = now });
                 db.Insert(new SaasPlan { Id = "plan.free", Code = "free", Name = "Free", CreatedDate = now, ModifiedDate = now });
@@ -403,6 +440,7 @@ public class SaasSecurityTests
                 db.CreateTable<NotificationDelivery>();
                 db.CreateTable<SupportAccessGrant>();
                 db.CreateTable<SaasAuditEvent>();
+                db.CreateTable<PlatformAuditEvent>();
                 var now = DateTime.UtcNow;
                 db.Insert(new Workspace { Id = "organization-1", Name = "Member Co", Slug = "member-co", CreatedDate = now, ModifiedDate = now });
                 db.Insert(new WorkspaceMember { Id = "member-1", WorkspaceId = "organization-1", UserId = "user-1", Role = WorkspaceMemberRole.Member, Status = WorkspaceMemberStatus.Active, CreatedDate = now, ModifiedDate = now });
@@ -518,8 +556,12 @@ public class SaasSecurityTests
             Is.EqualTo("default-src 'self'; script-src 'self' 'unsafe-eval'"));
     }
 
-    private static WorkspaceContext Context(WorkspaceMemberRole role) => new(
-        new Workspace { Id = "organization-1", Name = "Acme", Slug = "acme" },
-        new WorkspaceMember { Id = "member-1", WorkspaceId = "organization-1", UserId = "user-1", Role = role, Status = WorkspaceMemberStatus.Active },
-        "user-1");
+    private static WorkspaceScope Context(WorkspaceMemberRole role)
+    {
+        var scope = new WorkspaceScope();
+        scope.Confine(
+            new Workspace { Id = "organization-1", Name = "Acme", Slug = "acme" },
+            new WorkspaceMember { Id = "member-1", WorkspaceId = "organization-1", UserId = "user-1", Role = role, Status = WorkspaceMemberStatus.Active });
+        return scope;
+    }
 }

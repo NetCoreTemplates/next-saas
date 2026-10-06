@@ -45,6 +45,7 @@
     <PackageReference Include="ServiceStack.OrmLite.SqlServer" Version="10.*" />
     <PackageReference Include="ServiceStack.OrmLite.MySql" Version="10.*" />
     <PackageReference Include="ServiceStack.Jobs" Version="10.*" />
+    <PackageReference Include="ServiceStack.AI.Chat" Version="10.*" />
   </ItemGroup>
 
   <PropertyGroup>

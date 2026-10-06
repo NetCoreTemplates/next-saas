@@ -54,7 +54,6 @@ public class ConfigureSaas : IHostingStartup
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISaasManager, SaasManager>();
         services.AddSingleton<IEntitlementResolver, EntitlementResolver>();
-        services.AddSingleton<IWorkspaceContextResolver, WorkspaceContextResolver>();
         services.AddSingleton<IAccountDeletionManager, AccountDeletionManager>();
         services.AddSingleton<INotificationManager, NotificationManager>();
         services.AddSingleton<IStripeBillingGateway, StripeBillingGateway>();
@@ -62,20 +61,23 @@ public class ConfigureSaas : IHostingStartup
     {
         appHost.GlobalRequestFilters.Add((request, response, dto) =>
         {
+            if (dto is not IRequireWorkspace) return;
+
+            // Opening the request's connection checks the user is a member of the organization the API is for
+            // (see SaasDb.ForRequest). It's opened here so that's checked before the API runs, whenever the API
+            // first uses its own connection.
+            using var db = appHost.GetDbConnection(request);
+
+            // [RequiresFeature] APIs need their organization's plan to include the feature
             var requirements = dto.GetType().GetCustomAttributes(typeof(RequiresFeatureAttribute), true)
                 .Cast<RequiresFeatureAttribute>().ToList();
             if (requirements.Count == 0) return;
-
-            var session = request.GetSession();
-            if (!session.IsAuthenticated || session.UserAuthId.IsNullOrEmpty()) return;
-            using var db = appHost.Resolve<IDbConnectionFactory>().Open();
-            var context = appHost.Resolve<IWorkspaceContextResolver>().Resolve(db, session, request);
-            var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == context.Workspace.Id)
-                ?? throw new HttpError(409, "SubscriptionNotFound", "The organization does not have a subscription projection.");
+            var workspace = db.GetWorkspaceScope().Workspace;
+            var subscription = db.GetSubscription();
             var entitlements = appHost.Resolve<IEntitlementResolver>();
             foreach (var requirement in requirements)
             {
-                if (!entitlements.HasFeature(db, context.Workspace, subscription, requirement.FeatureKey))
+                if (!entitlements.HasFeature(db, workspace, subscription, requirement.FeatureKey))
                     throw new HttpError(403, "FeatureNotEntitled",
                         $"Feature '{requirement.FeatureKey}' is not included in the current plan.");
             }
@@ -94,6 +96,7 @@ public class ConfigureSaas : IHostingStartup
         if (config.Features.Any(x => x.Key.IsNullOrEmpty())) throw new InvalidOperationException("Every SaaS feature requires a stable key.");
         if (config.Meters.Any(x => x.Key.IsNullOrEmpty())) throw new InvalidOperationException("Every SaaS meter requires a stable key.");
         if (config.PastDueGraceDays < 0 || config.WorkspaceDeletionDelayDays < 0 || config.ExportExpiryDays < 1 || config.ApiKeyRequestsPerMinute < 1 ||
+            config.OrganizationApiRequestsPerMinute < config.ApiKeyRequestsPerMinute ||
             config.AnalyticsRetentionDays < 1 || config.AuditRetentionDays < 1 || config.NotificationRetentionDays < 1 ||
             config.DeletedFileRetentionDays < 1 || config.LifecycleHistoryRetentionDays < 1 || config.RetentionBatchSize is < 1 or > 10000)
             throw new InvalidOperationException("SaaS lifecycle durations are invalid.");
@@ -335,22 +338,23 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         if (remote.CustomerId != checkout.CustomerId)
             throw new HttpError(409, "CheckoutSubscriptionMismatch", "Stripe returned an inconsistent Checkout subscription.");
 
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId("stripe-checkout");
         if (!checkout.CustomerId.IsNullOrEmpty() && workspace.StripeCustomerId != checkout.CustomerId)
         {
             workspace.StripeCustomerId = checkout.CustomerId;
-            workspace.ModifiedDate = DateTime.UtcNow;
-            workspace.ModifiedBy = "stripe-checkout";
             db.Update(workspace);
         }
 
+        var before = SubscriptionState.Of(db.GetSubscription());
         ApplySubscription(db, workspace, remote);
+        SaasRevenue.RecordChange(db, before, db.GetSubscription(), saas.DefaultCurrency);
         if (!db.Exists<SaasAuditEvent>(x => x.Category == "billing" && x.SubjectId == checkout.Id))
         {
             db.Insert(new SaasAuditEvent {
-                WorkspaceId = workspace.Id,
                 Category = "billing",
                 Action = "checkout.session.confirmed",
-                ActorId = "stripe",
+                UserId = "stripe",
                 SubjectId = checkout.Id,
                 CreatedDate = DateTime.UtcNow,
             });
@@ -397,11 +401,13 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
 
     public async Task<bool> ReconcileSubscriptionAsync(IDbConnection db, Workspace workspace, CancellationToken token = default)
     {
-        var local = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id)
-            ?? throw new HttpError(404, "SubscriptionNotFound", "The organization subscription was not found.");
+        db.AssertConfinedTo(workspace.Id);
+        var local = db.GetSubscription();
         if (local.StripeSubscriptionId.IsNullOrEmpty()) return false;
         var remote = await new SubscriptionService(Client).GetAsync(local.StripeSubscriptionId, cancellationToken: token);
+        var before = SubscriptionState.Of(local);
         ApplySubscription(db, workspace, remote);
+        SaasRevenue.RecordChange(db, before, db.GetSubscription(), saas.DefaultCurrency);
         return true;
     }
 
@@ -420,31 +426,36 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         }
     }
 
-    public Task ApplyWebhookAsync(IDbConnection db, StripeEventInbox inbox, CancellationToken token = default)
+    public Workspace? FindWebhookWorkspace(IDbConnection db, StripeEventInbox inbox)
     {
         using var document = JsonDocument.Parse(inbox.PayloadJson);
         var obj = document.RootElement.GetProperty("data").GetProperty("object");
         var customerId = String(obj, "customer");
         var workspaceId = Metadata(obj, "workspaceId");
-        var workspace = !workspaceId.IsNullOrEmpty() ? db.SingleById<Workspace>(workspaceId)
+        return !workspaceId.IsNullOrEmpty() ? db.SingleById<Workspace>(workspaceId)
             : !customerId.IsNullOrEmpty() ? db.Single<Workspace>(x => x.StripeCustomerId == customerId) : null;
-        if (workspace == null) return Task.CompletedTask;
+    }
+
+    public Task ApplyWebhookAsync(IDbConnection db, Workspace workspace, StripeEventInbox inbox, CancellationToken token = default)
+    {
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId("stripe");
+        using var document = JsonDocument.Parse(inbox.PayloadJson);
+        var obj = document.RootElement.GetProperty("data").GetProperty("object");
+        var customerId = String(obj, "customer");
+        var before = SubscriptionState.Of(db.GetSubscription());
 
         if (!customerId.IsNullOrEmpty() && workspace.StripeCustomerId != customerId)
         {
             workspace.StripeCustomerId = customerId;
-            workspace.ModifiedDate = DateTime.UtcNow;
-            workspace.ModifiedBy = "stripe";
             db.Update(workspace);
         }
 
         if (inbox.EventType == "checkout.session.completed")
         {
             var subscriptionId = String(obj, "subscription");
-            var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+            var subscription = db.GetSubscription();
             subscription.StripeSubscriptionId = subscriptionId;
-            subscription.ModifiedDate = DateTime.UtcNow;
-            subscription.ModifiedBy = "stripe";
             db.Update(subscription);
         }
         else if (inbox.EventType.StartsWith("customer.subscription."))
@@ -453,36 +464,33 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         }
         else if (inbox.EventType == "invoice.payment_failed")
         {
-            var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+            var subscription = db.GetSubscription();
             subscription.Status = SubscriptionStatus.PastDue;
             subscription.StripeStatus = "past_due";
             subscription.GraceEnd = DateTime.UtcNow.AddDays(saas.PastDueGraceDays);
-            subscription.ModifiedDate = DateTime.UtcNow;
-            subscription.ModifiedBy = "stripe";
             db.Update(subscription);
         }
         else if (inbox.EventType == "invoice.paid")
         {
-            var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+            var subscription = db.GetSubscription();
             if (subscription.StripeSubscriptionId != null)
                 subscription.Status = SubscriptionStatus.Active;
             subscription.StripeStatus = "active";
             subscription.GraceEnd = null;
-            subscription.ModifiedDate = DateTime.UtcNow;
-            subscription.ModifiedBy = "stripe";
             db.Update(subscription);
         }
 
         db.Insert(new SaasAuditEvent {
-            WorkspaceId = workspace.Id, Category = "billing", Action = inbox.EventType,
-            ActorId = "stripe", SubjectId = inbox.StripeEventId, CreatedDate = DateTime.UtcNow,
+            Category = "billing", Action = inbox.EventType,
+            UserId = "stripe", SubjectId = inbox.StripeEventId, CreatedDate = DateTime.UtcNow,
         });
+        SaasRevenue.RecordChange(db, before, db.GetSubscription(), saas.DefaultCurrency);
         return Task.CompletedTask;
     }
 
     private static void ApplySubscription(IDbConnection db, Workspace workspace, JsonElement obj)
     {
-        var local = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        var local = db.GetSubscription();
         var priceId = NestedString(obj, "items", "data", 0, "price", "id");
         var mappedPrice = priceId.IsNullOrEmpty() ? null : db.Single<SaasPlanPrice>(x => x.StripePriceId == priceId);
         local.StripeSubscriptionId = String(obj, "id");
@@ -505,14 +513,13 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         local.PeriodEnd = UnixDate(obj, "current_period_end") ?? NestedUnixDate(obj, "items", "data", 0, "current_period_end") ?? local.PeriodEnd;
         local.TrialEnd = UnixDate(obj, "trial_end");
         local.CancelAt = UnixDate(obj, "cancel_at");
-        local.ModifiedDate = DateTime.UtcNow;
-        local.ModifiedBy = "stripe";
         db.Update(local);
     }
 
     private static void ApplySubscription(IDbConnection db, Workspace workspace, Subscription remote)
     {
-        var local = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        using var _ = db.WithUserId("stripe-checkout");
+        var local = db.GetSubscription();
         var item = remote.Items?.Data.FirstOrDefault();
         var priceId = item?.Price?.Id;
         var mappedPrice = priceId.IsNullOrEmpty() ? null : db.Single<SaasPlanPrice>(x => x.StripePriceId == priceId);
@@ -536,8 +543,6 @@ public class StripeBillingGateway(StripeConfig config, SaasConfig saas, ProductC
         local.PeriodEnd = item?.CurrentPeriodEnd ?? local.PeriodEnd;
         local.TrialEnd = remote.TrialEnd;
         local.CancelAt = remote.CancelAt;
-        local.ModifiedDate = DateTime.UtcNow;
-        local.ModifiedBy = "stripe-checkout";
         db.Update(local);
     }
 

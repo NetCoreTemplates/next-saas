@@ -17,7 +17,7 @@
   ],
   "tableClassification": {
     "global": ["SaasPlan", "SaasPlanVersion", "SaasPlanPrice", "SaasPlanFeature", "SaasPlanQuota"],
-    "tenantOwned": ["Workspace", "WorkspaceMember", "BillingSubscription", "UsagePeriod", "UsageAggregate", "UsageEvent", "UsageReservation", "UsageDailyRollup", "CustomerEntitlementOverride", "StoredFile", "NotificationPreference", "SupportNote", "SupportAccessGrant", "WorkspaceLifecycleRequest", "DataExportArtifact", "WorkspaceRetentionPolicy"],
-    "platformOperational": ["StripeEventInbox", "NotificationDelivery", "SaasAuditEvent", "SaasDailySnapshot", "UserWorkspacePreference", "DataRetentionRun"]
+    "tenantOwned": ["Workspace", "WorkspaceMember", "BillingSubscription", "UsagePeriod", "UsageAggregate", "UsageEvent", "UsageReservation", "UsageDailyRollup", "CustomerEntitlementOverride", "StoredFile", "NotificationPreference", "SupportNote", "SupportAccessGrant", "WorkspaceLifecycleRequest", "DataExportArtifact", "WorkspaceRetentionPolicy", "NotificationDelivery", "SaasAuditEvent"],
+    "platformOperational": ["StripeEventInbox", "PlatformAuditEvent", "SaasDailySnapshot", "UserWorkspacePreference", "DataRetentionRun"]
   }
 }

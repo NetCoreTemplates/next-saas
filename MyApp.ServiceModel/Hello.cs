@@ -2,6 +2,7 @@
 
 namespace MyApp.ServiceModel;
 
+[Tag(ApiTags.Examples)]
 [Route("/hello/{Name}")]
 public class Hello : IGet, IReturn<HelloResponse>
 {

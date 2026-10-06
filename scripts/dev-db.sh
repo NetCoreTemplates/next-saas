@@ -369,6 +369,8 @@ case "$COMMAND" in
       printf 'SQLite runs no container. Use ./scripts/reset-dev.sh to discard local data.\n'
       exit 0
     fi
+    # Fail before claiming anything was removed: a daemon this user cannot reach removes nothing.
+    require_runtime
     "$DOCKER" rm -f "$CONTAINER" >/dev/null 2>&1 || true
     printf 'Removed %s. Its data volume %s was kept.\n' "$CONTAINER" "$VOLUME"
     ;;
@@ -377,6 +379,8 @@ case "$COMMAND" in
       printf 'Use: ASPNETCORE_ENVIRONMENT=Development ./scripts/reset-dev.sh --yes\n'
       exit 0
     fi
+    # Fail before claiming anything was removed: a daemon this user cannot reach removes nothing.
+    require_runtime
     "$DOCKER" rm -f "$CONTAINER" >/dev/null 2>&1 || true
     "$DOCKER" volume rm "$VOLUME" >/dev/null 2>&1 || true
     printf 'Removed %s and its data volume.\n' "$CONTAINER"

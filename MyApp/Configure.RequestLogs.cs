@@ -1,3 +1,4 @@
+using MyApp.ServiceInterface;
 using ServiceStack.Web;
 using ServiceStack.Jobs;
 
@@ -16,6 +17,11 @@ public class ConfigureRequestLogs : IHostingStartup
             EnableRequestBodyTracking = context.HostingEnvironment.IsDevelopment(),
             EnableErrorTracking = true,
             ExcludeRequestDtoTypes = [typeof(ServiceModel.StripeWebhook)],
+            // Which organization a request worked for, so its log entries can be found by organization
+            RequestLogFilter = (request, entry) => {
+                if (request.GetWorkspaceId() is { } workspaceId)
+                    (entry.Meta ??= new())[SaasTelemetry.WorkspaceTag] = workspaceId;
+            },
         });
         services.AddHostedService<RequestLogsHostedService>();
     });

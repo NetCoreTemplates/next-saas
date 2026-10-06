@@ -123,7 +123,10 @@ public class SaasConfig
     public int LifecycleHistoryRetentionDays { get; set; } = 365;
     public int RetentionBatchSize { get; set; } = 1000;
     public bool EnableLegalHolds { get; set; } = true;
+    /// <summary>The limit for each API key</summary>
     public int ApiKeyRequestsPerMinute { get; set; } = 120;
+    /// <summary>The limit for an organization across all of its API keys</summary>
+    public int OrganizationApiRequestsPerMinute { get; set; } = 600;
     public List<SaasFeatureConfig> Features { get; set; } = [
         new() { Key = "files.basic", DisplayName = "File storage", Description = "Upload, download, and delete files.", Category = "Storage", DefaultEnabled = true },
         new() { Key = "analytics.basic", DisplayName = "Usage analytics", Description = "View current and historical usage.", Category = "Analytics", DefaultEnabled = true },

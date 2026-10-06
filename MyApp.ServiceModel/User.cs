@@ -19,6 +19,8 @@ public class User
     public string? ProfileUrl { get; set; }
 }
 
+[Tag(ApiTags.Customers)]
+[Tag(ApiTags.Platform)]
 [ValidateIsAdmin]
 public class QueryUsers : QueryDb<User>
 {

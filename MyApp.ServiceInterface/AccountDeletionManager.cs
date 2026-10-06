@@ -16,7 +16,7 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? 
 {
     public List<string> GetOwnedOrganizationNames(string userId)
     {
-        using var db = dbFactory.Open();
+        using var db = dbFactory.OpenAcrossWorkspaces(userId);
         if (!db.TableExists<WorkspaceMember>() || !db.TableExists<Workspace>()) return [];
 
         var ownedIds = db.Select<WorkspaceMember>(x =>
@@ -33,7 +33,8 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? 
 
     public void RemoveSaasAccess(string userId)
     {
-        using var db = dbFactory.Open();
+        // The user is deleting their own account, across every organization they belong to
+        using var db = dbFactory.OpenAcrossWorkspaces(userId);
         var blocking = GetOwnedOrganizationNames(db, userId);
         if (blocking.Count > 0)
             throw new InvalidOperationException(
@@ -54,15 +55,12 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? 
                     WorkspaceId = workspace.Id, Type = LifecycleRequestType.Delete, Status = LifecycleRequestStatus.Scheduled,
                     RequestedBy = userId, Confirmation = workspace.Name,
                     ScheduledAt = now.AddDays(config?.WorkspaceDeletionDelayDays ?? 7),
-                    CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
                 };
                 db.Insert(operation);
                 if (db.TableExists<SaasAuditEvent>())
-                    db.Insert(new SaasAuditEvent { WorkspaceId = workspace.Id, Category = "lifecycle", Action = "deletion.requested", ActorId = userId, SubjectId = operation.Id, Reason = "Individual account deletion", CreatedDate = now });
+                    db.Insert(new SaasAuditEvent { WorkspaceId = workspace.Id, Category = "lifecycle", Action = "deletion.requested", UserId = userId, SubjectId = operation.Id, Reason = "Individual account deletion", CreatedDate = now });
             }
             workspace.Status = WorkspaceStatus.PendingDeletion;
-            workspace.ModifiedDate = now;
-            workspace.ModifiedBy = userId;
             db.Update(workspace);
         }
 
@@ -77,7 +75,7 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? 
                         WorkspaceId = member.WorkspaceId,
                         Category = "membership",
                         Action = "member.left",
-                        ActorId = userId,
+                        UserId = userId,
                         SubjectId = member.Id,
                         Reason = "Personal account deletion",
                         CreatedDate = now,
@@ -95,10 +93,10 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? 
                              .Where(x => !string.IsNullOrEmpty(x.RefIdStr)))
                 {
                     db.Insert(new SaasAuditEvent {
-                        WorkspaceId = apiKey.RefIdStr,
+                        WorkspaceId = apiKey.RefIdStr!,
                         Category = "api-key",
                         Action = "deleted",
-                        ActorId = userId,
+                        UserId = userId,
                         SubjectId = apiKey.Id.ToString(),
                         Reason = "Personal account deletion",
                         CreatedDate = now,
@@ -121,16 +119,15 @@ public class AccountDeletionManager(IDbConnectionFactory dbFactory, SaasConfig? 
             {
                 grant.RevokedAt = now;
                 grant.AccessEndedAt = now;
-                grant.ModifiedDate = now;
-                grant.ModifiedBy = "account-deletion";
-                db.Update(grant);
+                using (db.WithUserId("account-deletion"))
+                    db.Update(grant);
                 if (db.TableExists<SaasAuditEvent>())
                 {
                     db.Insert(new SaasAuditEvent {
                         WorkspaceId = grant.WorkspaceId,
                         Category = "support",
                         Action = "access.revoked",
-                        ActorId = "account-deletion",
+                        UserId = "account-deletion",
                         SubjectId = grant.Id,
                         Reason = "Operator account deletion",
                         CreatedDate = now,

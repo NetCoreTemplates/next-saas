@@ -1,5 +1,6 @@
 'use client'
 
+import { setTabWorkspaceId } from '@/lib/gateway'
 import { Suspense, useContext, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth, useClient } from '@servicestack/react'
@@ -32,6 +33,8 @@ function InvitationContent() {
     const api = await client.api(new AcceptWorkspaceInvitation({ token }))
     setBusy(false)
     if (api.succeeded) {
+      // "Open organization" opens the one that was joined
+      setTabWorkspaceId(api.response?.workspace?.id)
       setAccepted(true)
       setMessage(`You joined ${api.response?.workspace?.name ?? 'the organization'}.`)
     } else setMessage(api.error?.message ?? 'The invitation could not be accepted.')

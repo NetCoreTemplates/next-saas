@@ -15,10 +15,25 @@ public enum QuotaEnforcement { HardLimit, SoftLimit, MeteredOverage }
 public enum StripeInboxStatus { Pending, Processing, Completed, Failed }
 public enum CouponDuration { Once, Forever, Repeating }
 
+/// <summary>
+/// Tables owned by an organization. Connections opened for a request can only read and write the rows of the
+/// request's organization, see SaasDb.ForWorkspace().
+/// Every query on these tables is filtered by WorkspaceId, so each has an index or unique constraint that
+/// starts with it, followed by the columns it's queried by.
+/// </summary>
+public interface IHasWorkspaceId
+{
+    string WorkspaceId { get; set; }
+}
+
+/// <summary>
+/// Audit columns set by the rules of the database connection that writes the row, see SaasDb.SetUserId().
+/// The created columns are only written when the row is inserted.
+/// </summary>
 public abstract class SaasAuditBase
 {
-    public DateTime CreatedDate { get; set; }
-    public string CreatedBy { get; set; } = "system";
+    [IgnoreOnUpdate] public DateTime CreatedDate { get; set; }
+    [IgnoreOnUpdate] public string CreatedBy { get; set; } = "system";
     public DateTime ModifiedDate { get; set; }
     public string ModifiedBy { get; set; } = "system";
 }
@@ -36,10 +51,10 @@ public class Workspace : SaasAuditBase
 }
 
 [UniqueConstraint(nameof(WorkspaceId), nameof(UserId))]
-public class WorkspaceMember : SaasAuditBase
+public class WorkspaceMember : SaasAuditBase, IHasWorkspaceId
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = "";
+    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = default!;
     [Index] public string UserId { get; set; } = "";
     public WorkspaceMemberRole Role { get; set; } = WorkspaceMemberRole.Member;
     public WorkspaceMemberStatus Status { get; set; } = WorkspaceMemberStatus.Active;
@@ -56,7 +71,7 @@ public class WorkspaceMember : SaasAuditBase
 public class UserWorkspacePreference : SaasAuditBase
 {
     [PrimaryKey] public string UserId { get; set; } = "";
-    [References(typeof(Workspace)), Index] public string ActiveWorkspaceId { get; set; } = "";
+    [References(typeof(Workspace)), Index] public string ActiveWorkspaceId { get; set; } = default!;
 }
 
 [UniqueConstraint(nameof(Code))]
@@ -129,10 +144,10 @@ public class SaasPlanQuota : SaasAuditBase
     public bool RolloverEnabled { get; set; }
 }
 
-public class BillingSubscription : SaasAuditBase
+public class BillingSubscription : SaasAuditBase, IHasWorkspaceId
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    [Unique, References(typeof(Workspace))] public string WorkspaceId { get; set; } = "";
+    [Unique, References(typeof(Workspace))] public string WorkspaceId { get; set; } = default!;
     [References(typeof(SaasPlanVersion))] public string PlanVersionId { get; set; } = "";
     public SubscriptionStatus Status { get; set; } = SubscriptionStatus.Free;
     [Index] public string? StripeSubscriptionId { get; set; }
@@ -149,10 +164,10 @@ public class BillingSubscription : SaasAuditBase
 }
 
 [UniqueConstraint(nameof(WorkspaceId), nameof(MeterKey), nameof(PeriodStart))]
-public class UsagePeriod : SaasAuditBase
+public class UsagePeriod : SaasAuditBase, IHasWorkspaceId
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = "";
+    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = default!;
     public string MeterKey { get; set; } = "";
     public DateTime PeriodStart { get; set; }
     public DateTime PeriodEnd { get; set; }
@@ -164,9 +179,10 @@ public class UsagePeriod : SaasAuditBase
 }
 
 [UniqueConstraint(nameof(UsagePeriodId))]
-public class UsageAggregate : SaasAuditBase
+public class UsageAggregate : SaasAuditBase, IHasWorkspaceId
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    [References(typeof(Workspace)), Index] public string WorkspaceId { get; set; } = default!;
     [References(typeof(UsagePeriod))] public string UsagePeriodId { get; set; } = "";
     public long UsedUnits { get; set; }
     public long ReservedUnits { get; set; }
@@ -175,26 +191,27 @@ public class UsageAggregate : SaasAuditBase
 }
 
 [UniqueConstraint(nameof(WorkspaceId), nameof(IdempotencyKey))]
-public class UsageEvent
+[CompositeIndex(nameof(WorkspaceId), nameof(MeterKey), nameof(RecordedDate))]
+public class UsageEvent : IHasWorkspaceId
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = "";
+    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = default!;
     [References(typeof(UsagePeriod))] public string UsagePeriodId { get; set; } = "";
-    [Index] public string MeterKey { get; set; } = "";
+    public string MeterKey { get; set; } = "";
     public long Units { get; set; }
     public string IdempotencyKey { get; set; } = "";
     public string? Source { get; set; }
     public string EventType { get; set; } = "consume";
     public string? MetadataJson { get; set; }
-    public DateTime RecordedDate { get; set; }
+    [Index] public DateTime RecordedDate { get; set; }
     public string RecordedBy { get; set; } = "system";
 }
 
 [UniqueConstraint(nameof(WorkspaceId), nameof(Key))]
-public class CustomerEntitlementOverride : SaasAuditBase
+public class CustomerEntitlementOverride : SaasAuditBase, IHasWorkspaceId
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = "";
+    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = default!;
     public string Key { get; set; } = "";
     public bool? Enabled { get; set; }
     public long? QuotaUnits { get; set; }
@@ -217,13 +234,16 @@ public class StripeEventInbox
     public DateTime? ProcessedDate { get; set; }
 }
 
-public class SaasAuditEvent
+/// <summary>
+/// What's recorded about an action. Events are written with db.Insert(), which applies the audit policy: its
+/// actions are registered, and its details are redacted, see SaasAudit.
+/// </summary>
+public abstract class AuditEventBase
 {
     [PrimaryKey] public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    [Index] public string? WorkspaceId { get; set; }
     public string Category { get; set; } = "";
     public string Action { get; set; } = "";
-    public string ActorId { get; set; } = "system";
+    public string UserId { get; set; } = "system";
     public string? SubjectId { get; set; }
     public string? DetailJson { get; set; }
     public string Outcome { get; set; } = "Succeeded";
@@ -231,7 +251,29 @@ public class SaasAuditEvent
     public string? RequestId { get; set; }
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
-    public DateTime CreatedDate { get; set; }
+    [Index] public DateTime CreatedDate { get; set; }
+}
+
+/// <summary>
+/// An organization's audit log: what happened in it, by its members, the platform's operators and the system
+/// </summary>
+[CompositeIndex(nameof(WorkspaceId), nameof(CreatedDate))]
+public class SaasAuditEvent : AuditEventBase, IHasWorkspaceId
+{
+    [References(typeof(Workspace))] public string WorkspaceId { get; set; } = default!;
+}
+
+/// <summary>
+/// The platform's audit log: actions that aren't about one organization, e.g. publishing a plan
+/// </summary>
+public class PlatformAuditEvent : AuditEventBase;
+
+/// <summary>
+/// An event of either audit log, for operators reviewing both
+/// </summary>
+public class AuditEventInfo : AuditEventBase
+{
+    public string? WorkspaceId { get; set; }
 }
 
 public class PlanPriceInfo
@@ -266,6 +308,7 @@ public class PlanInfo
     public List<PlanPriceInfo> Prices { get; set; } = [];
 }
 
+[Tag(ApiTags.Billing)]
 [Route("/saas/plans", "GET")]
 public class GetSaasPlans : IGet, IReturn<GetSaasPlansResponse> { }
 public class GetSaasPlansResponse
@@ -294,9 +337,15 @@ public class UsageSummary
     public string Source { get; set; } = "plan";
 }
 
+[Tag(ApiTags.Usage)]
 [ValidateIsAuthenticated]
 [Route("/saas/dashboard", "GET")]
-public class GetSaasDashboard : IGet, IReturn<GetSaasDashboardResponse> { }
+[ValidateHasScope("workspace:read")]
+[WorkspaceAccess(WorkspaceAccess.Account)]
+public class GetSaasDashboard : IGet, IReturn<GetSaasDashboardResponse>, IRequireWorkspace
+{
+    public string WorkspaceId { get; set; } = default!;
+}
 public class GetSaasDashboardResponse
 {
     public Workspace? Workspace { get; set; }
@@ -309,9 +358,13 @@ public class GetSaasDashboardResponse
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.ApiKeys)]
 [ValidateIsAuthenticated]
 [Route("/saas/api-keys", "GET")]
-public class GetWorkspaceApiKeys : IGet, IReturn<GetWorkspaceApiKeysResponse> { }
+public class GetWorkspaceApiKeys : IGet, IReturn<GetWorkspaceApiKeysResponse>, IRequireWorkspace
+{
+    public string WorkspaceId { get; set; } = default!;
+}
 public class GetWorkspaceApiKeysResponse
 {
     public List<WorkspaceApiKeyInfo> Results { get; set; } = [];
@@ -328,11 +381,14 @@ public class WorkspaceApiKeyInfo
     public bool Active { get; set; }
 }
 
+[Tag(ApiTags.Usage)]
 [ValidateIsAuthenticated]
 [RequiresFeature("api.access")]
 [Route("/saas/usage", "POST")]
-public class RecordUsage : IPost, IReturn<RecordUsageResponse>
+[ValidateHasScope("usage:write")]
+public class RecordUsage : IPost, IReturn<RecordUsageResponse>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     public string MeterKey { get; set; } = "api.requests";
     [ValidateGreaterThan(0)] public long Units { get; set; } = 1;
     [ValidateNotEmpty] public string IdempotencyKey { get; set; } = "";
@@ -346,10 +402,12 @@ public class RecordUsageResponse
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Organizations)]
 [ValidateIsAuthenticated]
 [Route("/saas/workspace", "POST")]
-public class UpdateWorkspaceProfile : IPost, IReturn<Workspace>
+public class UpdateWorkspaceProfile : IPost, IReturn<Workspace>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     [ValidateNotEmpty] public string Name { get; set; } = "";
     [ValidateNotEmpty] public string Slug { get; set; } = "";
     [ValidateEmail] public string? BillingEmail { get; set; }
@@ -378,6 +436,7 @@ public class WorkspaceAccessInfo
     public bool IsActive { get; set; }
 }
 
+[Tag(ApiTags.Organizations)]
 [ValidateIsAuthenticated]
 [Route("/saas/workspaces", "GET")]
 public class GetMyWorkspaces : IGet, IReturn<GetMyWorkspacesResponse> { }
@@ -388,6 +447,7 @@ public class GetMyWorkspacesResponse
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Organizations)]
 [ValidateIsAuthenticated]
 [Route("/saas/organizations", "POST")]
 public class CreateOrganization : IPost, IReturn<WorkspaceAccessInfo>
@@ -396,37 +456,48 @@ public class CreateOrganization : IPost, IReturn<WorkspaceAccessInfo>
     [ValidateEmail] public string? BillingEmail { get; set; }
 }
 
+[Tag(ApiTags.Organizations)]
 [ValidateIsAuthenticated]
 [Route("/saas/workspaces/active", "POST")]
 public class SwitchWorkspace : IPost, IReturn<EmptyResponse>
 {
-    [ValidateNotEmpty] public string WorkspaceId { get; set; } = "";
+    [ValidateNotEmpty] public string WorkspaceId { get; set; } = default!;
 }
 
+[Tag(ApiTags.Team)]
 [ValidateIsAuthenticated]
 [Route("/saas/members", "GET")]
-public class GetWorkspaceMembers : IGet, IReturn<GetWorkspaceMembersResponse> { }
+[WorkspaceAccess(WorkspaceAccess.Account)]
+public class GetWorkspaceMembers : IGet, IReturn<GetWorkspaceMembersResponse>, IRequireWorkspace
+{
+    public string WorkspaceId { get; set; } = default!;
+}
 public class GetWorkspaceMembersResponse
 {
     public List<WorkspaceMemberInfo> Results { get; set; } = [];
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Team)]
 [ValidateIsAuthenticated]
 [Route("/saas/members", "POST")]
-public class InviteWorkspaceMember : IPost, IReturn<WorkspaceMemberInfo>
+public class InviteWorkspaceMember : IPost, IReturn<WorkspaceMemberInfo>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     [ValidateNotEmpty, ValidateEmail] public string Email { get; set; } = "";
     public WorkspaceMemberRole Role { get; set; } = WorkspaceMemberRole.Member;
 }
 
+[Tag(ApiTags.Team)]
 [ValidateIsAuthenticated]
 [Route("/saas/workspace/invitations/{Id}/resend", "POST")]
-public class ResendWorkspaceInvitation : IPost, IReturn<WorkspaceMemberInfo>
+public class ResendWorkspaceInvitation : IPost, IReturn<WorkspaceMemberInfo>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     [ValidateNotEmpty] public string Id { get; set; } = "";
 }
 
+[Tag(ApiTags.Team)]
 [ValidateIsAuthenticated]
 [Route("/saas/invitations/accept", "POST")]
 public class AcceptWorkspaceInvitation : IPost, IReturn<WorkspaceAccessInfo>
@@ -434,41 +505,56 @@ public class AcceptWorkspaceInvitation : IPost, IReturn<WorkspaceAccessInfo>
     [ValidateNotEmpty] public string Token { get; set; } = "";
 }
 
+[Tag(ApiTags.Team)]
 [ValidateIsAuthenticated]
 [Route("/saas/workspace/members/{Id}/role", "POST")]
-public class UpdateWorkspaceMemberRole : IPost, IReturn<WorkspaceMemberInfo>
+public class UpdateWorkspaceMemberRole : IPost, IReturn<WorkspaceMemberInfo>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     [ValidateNotEmpty] public string Id { get; set; } = "";
     public WorkspaceMemberRole Role { get; set; }
 }
 
+[Tag(ApiTags.Team)]
 [ValidateIsAuthenticated]
 [Route("/saas/workspace/members/{Id}", "DELETE")]
-public class RemoveWorkspaceMember : IDelete, IReturn<EmptyResponse>
+public class RemoveWorkspaceMember : IDelete, IReturn<EmptyResponse>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     [ValidateNotEmpty] public string Id { get; set; } = "";
 }
 
+[Tag(ApiTags.Billing)]
 [ValidateIsAuthenticated]
 [Route("/saas/billing/checkout", "POST")]
-public class CreateCheckoutSession : IPost, IReturn<CreateBillingSessionResponse>
+[WorkspaceAccess(WorkspaceAccess.Account)]
+public class CreateCheckoutSession : IPost, IReturn<CreateBillingSessionResponse>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     public string PriceId { get; set; } = "";
 }
 
+[Tag(ApiTags.Billing)]
 [ValidateIsAuthenticated]
 [Route("/saas/billing/portal", "POST")]
-public class CreateCustomerPortalSession : IPost, IReturn<CreateBillingSessionResponse> { }
+[WorkspaceAccess(WorkspaceAccess.Account)]
+public class CreateCustomerPortalSession : IPost, IReturn<CreateBillingSessionResponse>, IRequireWorkspace
+{
+    public string WorkspaceId { get; set; } = default!;
+}
 public class CreateBillingSessionResponse
 {
     public string Url { get; set; } = "";
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Billing)]
 [ValidateIsAuthenticated]
 [Route("/saas/billing/checkout/confirm", "POST")]
-public class ConfirmCheckoutSession : IPost, IReturn<ConfirmCheckoutSessionResponse>
+[WorkspaceAccess(WorkspaceAccess.Account)]
+public class ConfirmCheckoutSession : IPost, IReturn<ConfirmCheckoutSessionResponse>, IRequireWorkspace
 {
+    public string WorkspaceId { get; set; } = default!;
     public string? SessionId { get; set; }
 }
 public class ConfirmCheckoutSessionResponse
@@ -478,9 +564,12 @@ public class ConfirmCheckoutSessionResponse
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Webhooks)]
 [Route("/stripe/webhook", "POST")]
 public class StripeWebhook : IPost, IReturn<EmptyResponse> { }
 
+[Tag(ApiTags.Operations)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin", "GET")]
 public class GetSaasAdmin : IGet, IReturn<GetSaasAdminResponse> { }
@@ -523,6 +612,8 @@ public class SaasCouponInfo
     public bool Livemode { get; set; }
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/coupons", "GET")]
 public class GetSaasCoupons : IGet, IReturn<GetSaasCouponsResponse> { }
@@ -533,6 +624,8 @@ public class GetSaasCouponsResponse
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/coupons", "POST")]
 public class CreateSaasCoupon : IPost, IReturn<SaasCouponInfo>
@@ -549,6 +642,8 @@ public class CreateSaasCoupon : IPost, IReturn<SaasCouponInfo>
     public bool FirstTimeTransaction { get; set; }
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/coupons/{PromotionCodeId}/deactivate", "POST")]
 public class DeactivateSaasCoupon : IPost, IReturn<SaasCouponInfo>
@@ -568,6 +663,8 @@ public class SaasPlanDetails
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/plans/{PlanId}", "GET")]
 public class GetSaasPlanDetails : IGet, IReturn<SaasPlanDetails>
@@ -603,6 +700,8 @@ public class ProvisionSaasPlanStripeCatalogResponse
     public ResponseStatus? ResponseStatus { get; set; }
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/plans/{PlanId}/stripe-catalog", "POST")]
 public class ProvisionSaasPlanStripeCatalog : IPost, IReturn<ProvisionSaasPlanStripeCatalogResponse>
@@ -628,6 +727,8 @@ public class SavePlanQuota
     public bool RolloverEnabled { get; set; }
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/plans/{PlanId}", "POST")]
 public class SaveSaasPlanDraft : IPost, IReturn<SaasPlanDetails>
@@ -646,6 +747,8 @@ public class SaveSaasPlanDraft : IPost, IReturn<SaasPlanDetails>
     public List<SavePlanQuota> Quotas { get; set; } = [];
 }
 
+[Tag(ApiTags.Plans)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/plans/{PlanId}/publish", "POST")]
 public class PublishSaasPlanDraft : IPost, IReturn<SaasPlanDetails>
@@ -653,12 +756,14 @@ public class PublishSaasPlanDraft : IPost, IReturn<SaasPlanDetails>
     [ValidateNotEmpty] public string PlanId { get; set; } = "";
 }
 
+[Tag(ApiTags.Customers)]
+[Tag(ApiTags.Platform)]
 [ValidateHasRole("Admin")]
 [Route("/saas/admin/overrides", "POST")]
 public class SaveCustomerOverride : IPost, IReturn<CustomerEntitlementOverride>
 {
     public string? Id { get; set; }
-    [ValidateNotEmpty] public string WorkspaceId { get; set; } = "";
+    [ValidateNotEmpty] public string WorkspaceId { get; set; } = default!;
     [ValidateNotEmpty] public string Key { get; set; } = "";
     public bool? Enabled { get; set; }
     public long? QuotaUnits { get; set; }

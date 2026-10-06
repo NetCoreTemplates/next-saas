@@ -1,5 +1,6 @@
 'use client'
 
+import { tabWorkspaceId } from '@/lib/gateway'
 import { ChangeEvent, DragEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { CircleAlert, CloudUpload, Download, FileCheck2, FileText, HardDrive, Loader2, Search, Trash2, X } from 'lucide-react'
 import AppShell, { Meter, PageHeading, Panel, StatusPill, quotaText, quotaTone } from '@/components/app-shell'
@@ -34,7 +35,7 @@ function DocumentsPage() {
 
   const load=useCallback(async(q='')=>{
     setLoading(true)
-    const api=await client.api(new QueryStoredFiles({search:q||undefined,take:100}))
+    const api=await client.api(new QueryStoredFiles({ workspaceId: tabWorkspaceId(), search:q||undefined,take:100}))
     if(api.succeeded)setFiles(api.response?.results ?? [])
     else setNotice({ok:false,text:api.error?.message ?? 'Unable to load files.'})
     setLoading(false)
@@ -52,7 +53,7 @@ function DocumentsPage() {
     for(const [index,file] of picked.entries()){
       setQueue(current=>current.map((entry,i)=>i===index?{...entry,status:'uploading'}:entry))
       const form=new FormData();form.append('file',file)
-      const api=await client.apiForm(new UploadStoredFile({idempotencyKey:crypto.randomUUID()}),form)
+      const api=await client.apiForm(new UploadStoredFile({ workspaceId: tabWorkspaceId(), idempotencyKey:crypto.randomUUID()}),form)
       if(api.succeeded)uploaded++
       setQueue(current=>current.map((entry,i)=>i===index?api.succeeded?{...entry,status:'done'}:{...entry,status:'error',error:api.error?.message ?? 'Upload failed.'}:entry))
     }
@@ -83,7 +84,7 @@ function DocumentsPage() {
 
   const remove=async(file:StoredFileInfo)=>{
     if(!file.id || !confirm(`Delete ${file.name}?`))return
-    const api=await client.api(new DeleteStoredFile({id:file.id}))
+    const api=await client.api(new DeleteStoredFile({ workspaceId: tabWorkspaceId(), id:file.id}))
     setNotice(api.succeeded?{ok:true,text:`${file.name} is queued for secure deletion.`}:{ok:false,text:api.error?.message ?? 'Delete failed.'})
     if(api.succeeded){setFiles(current=>current.filter(x=>x.id!==file.id));void refreshDashboard()}
   }
@@ -91,7 +92,7 @@ function DocumentsPage() {
   const download=async(file:StoredFileInfo)=>{
     if(!file.id)return
     try {
-      const blob=await client.get(new DownloadStoredFile({id:file.id}))
+      const blob=await client.get(new DownloadStoredFile({ workspaceId: tabWorkspaceId(), id:file.id}))
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=file.name ?? 'download';a.click();URL.revokeObjectURL(url)
     } catch (e) { setNotice({ok:false,text:e instanceof Error?e.message:'Download failed.'}) }
   }

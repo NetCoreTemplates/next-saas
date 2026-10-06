@@ -1,8 +1,8 @@
 /* Options:
-Date: 2026-09-23 10:01:26
-Version: 10.21
+Date: 2026-10-06 22:53:39
+Version: 10.40
 Tip: To override a DTO option, remove "//" prefix before updating
-BaseUrl: http://127.0.0.1:5005
+BaseUrl: https://localhost:5001
 
 //GlobalNamespace: 
 //MakePropertiesOptional: False
@@ -47,6 +47,19 @@ export interface IPost
 
 export interface IDelete
 {
+}
+
+export interface IRequireWorkspace
+{
+    workspaceId: string;
+}
+
+export enum CustomerHealthGrade
+{
+    Healthy = 'Healthy',
+    Watch = 'Watch',
+    AtRisk = 'AtRisk',
+    Churned = 'Churned',
 }
 
 export enum NotificationChannel
@@ -280,6 +293,123 @@ export class UsageBreakdownItem
     public constructor(init?: Partial<UsageBreakdownItem>) { (Object as any).assign(this, init); }
 }
 
+export class PlanRevenueInfo
+{
+    public planCode: string;
+    public planName: string;
+    public subscriptions: number;
+    public mrr: number;
+    /** @description Share of MRR, as a percentage */
+    public percent: number;
+
+    public constructor(init?: Partial<PlanRevenueInfo>) { (Object as any).assign(this, init); }
+}
+
+/** @description A month's recurring revenue and what moved it */
+export class RevenueMonth
+{
+    /** @description The first day of the month */
+    public month: string;
+    public startMrr: number;
+    public endMrr: number;
+    /** @description MRR from customers who started paying */
+    public newMrr: number;
+    /** @description MRR added by customers who moved to a higher price */
+    public expansionMrr: number;
+    /** @description MRR lost by customers who moved to a lower price */
+    public contractionMrr: number;
+    /** @description MRR lost by customers who stopped paying */
+    public churnedMrr: number;
+    public newCustomers: number;
+    public churnedCustomers: number;
+    /** @description Change from the start of the month, as a percentage */
+    public growthPercent?: number;
+
+    public constructor(init?: Partial<RevenueMonth>) { (Object as any).assign(this, init); }
+}
+
+export class RevenuePoint
+{
+    public date: string;
+    public mrr: number;
+    public trialingMrr: number;
+    public paying: number;
+
+    public constructor(init?: Partial<RevenuePoint>) { (Object as any).assign(this, init); }
+}
+
+export enum SubscriptionStatus
+{
+    Free = 'Free',
+    Trialing = 'Trialing',
+    Active = 'Active',
+    PastDue = 'PastDue',
+    Paused = 'Paused',
+    Canceled = 'Canceled',
+}
+
+export class CustomerRevenueInfo
+{
+    public workspaceId: string;
+    public name: string;
+    public planName: string;
+    public status: SubscriptionStatus;
+    public mrr: number;
+
+    public constructor(init?: Partial<CustomerRevenueInfo>) { (Object as any).assign(this, init); }
+}
+
+export enum WorkspaceKind
+{
+    Individual = 'Individual',
+    Business = 'Business',
+}
+
+/** @description Something that raised or lowered a customer's health score */
+export class HealthSignal
+{
+    public key: string;
+    /** @description What was found, e.g. API requests are down 62% on the previous 30 days */
+    public label: string;
+    /** @description How many points it added to or took from the score */
+    public impact: number;
+
+    public constructor(init?: Partial<HealthSignal>) { (Object as any).assign(this, init); }
+}
+
+export class CustomerHealthInfo
+{
+    public workspaceId: string;
+    public name: string;
+    public slug: string;
+    public kind: WorkspaceKind;
+    public planCode: string;
+    public planName: string;
+    public status: SubscriptionStatus;
+    public mrr: number;
+    public createdDate: string;
+    public members: number;
+    /** @description API requests in the last 30 days */
+    public apiRequests: number;
+    /** @description API requests in the 30 days before those */
+    public previousApiRequests: number;
+    /** @description Change in API requests on the previous 30 days, as a percentage */
+    public usageTrendPercent?: number;
+    /** @description Share of the current period's API allowance that's used, as a percentage */
+    public apiAllowanceUsedPercent?: number;
+    public lastActiveDate?: string;
+    /** @description Failed payments in the last 90 days */
+    public paymentFailures: number;
+    /** @description From 0 to 100, higher is healthier */
+    public score: number;
+    public grade: CustomerHealthGrade;
+    /** @description Growing or close to a limit, so likely to upgrade */
+    public expansionCandidate: boolean;
+    public signals: HealthSignal[] = [];
+
+    public constructor(init?: Partial<CustomerHealthInfo>) { (Object as any).assign(this, init); }
+}
+
 export class SaasMetricInfo
 {
     public key: string;
@@ -328,13 +458,12 @@ export class PlanInfo
     public constructor(init?: Partial<PlanInfo>) { (Object as any).assign(this, init); }
 }
 
-export class SaasAuditEvent
+export class AuditEventBase
 {
     public id: string;
-    public workspaceId?: string;
     public category: string;
     public action: string;
-    public actorId: string;
+    public userId: string;
     public subjectId?: string;
     public detailJson?: string;
     public outcome: string;
@@ -344,7 +473,15 @@ export class SaasAuditEvent
     public userAgent?: string;
     public createdDate: string;
 
-    public constructor(init?: Partial<SaasAuditEvent>) { (Object as any).assign(this, init); }
+    public constructor(init?: Partial<AuditEventBase>) { (Object as any).assign(this, init); }
+}
+
+export class SaasAuditEvent extends AuditEventBase implements IHasWorkspaceId
+{
+    // @References("typeof(MyApp.ServiceModel.Workspace)")
+    public workspaceId: string;
+
+    public constructor(init?: Partial<SaasAuditEvent>) { super(init); (Object as any).assign(this, init); }
 }
 
 export class SaasAuditBase
@@ -366,10 +503,12 @@ export enum NotificationDeliveryStatus
     Suppressed = 'Suppressed',
 }
 
-export class NotificationDelivery extends SaasAuditBase
+export class NotificationDelivery extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
-    public workspaceId?: string;
+    // @References("typeof(MyApp.ServiceModel.Workspace)")
+    public workspaceId: string;
+
     public userId: string;
     public recipient: string;
     public templateKey: string;
@@ -396,16 +535,6 @@ export class PlatformCapabilitiesInfo
     public canApproveSupportAccess: boolean;
 
     public constructor(init?: Partial<PlatformCapabilitiesInfo>) { (Object as any).assign(this, init); }
-}
-
-export enum SubscriptionStatus
-{
-    Free = 'Free',
-    Trialing = 'Trialing',
-    Active = 'Active',
-    PastDue = 'PastDue',
-    Paused = 'Paused',
-    Canceled = 'Canceled',
 }
 
 export class SaasCustomerSummary
@@ -475,7 +604,7 @@ export enum UsageReservationStatus
     Expired = 'Expired',
 }
 
-export class UsageReservation extends SaasAuditBase
+export class UsageReservation extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.Workspace)")
@@ -550,6 +679,11 @@ export class DataRetentionSettingsInfo
     public constructor(init?: Partial<DataRetentionSettingsInfo>) { (Object as any).assign(this, init); }
 }
 
+export interface IHasWorkspaceId
+{
+    workspaceId: string;
+}
+
 export enum WorkspaceAccessMode
 {
     Full = 'Full',
@@ -569,11 +703,13 @@ export class PlatformOperatorInfo
     public constructor(init?: Partial<PlatformOperatorInfo>) { (Object as any).assign(this, init); }
 }
 
-export class NotificationPreference extends SaasAuditBase
+export class NotificationPreference extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     public userId: string;
-    public workspaceId?: string;
+    // @References("typeof(MyApp.ServiceModel.Workspace)")
+    public workspaceId: string;
+
     public templateKey: string;
     public channel: NotificationChannel;
     public enabled: boolean;
@@ -581,10 +717,11 @@ export class NotificationPreference extends SaasAuditBase
     public constructor(init?: Partial<NotificationPreference>) { super(init); (Object as any).assign(this, init); }
 }
 
-export enum WorkspaceKind
+export class AuditEventInfo extends AuditEventBase
 {
-    Individual = 'Individual',
-    Business = 'Business',
+    public workspaceId?: string;
+
+    public constructor(init?: Partial<AuditEventInfo>) { super(init); (Object as any).assign(this, init); }
 }
 
 export enum LifecycleRequestType
@@ -606,7 +743,7 @@ export enum LifecycleRequestStatus
     Blocked = 'Blocked',
 }
 
-export class DataExportArtifact extends SaasAuditBase
+export class DataExportArtifact extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.WorkspaceLifecycleRequest)")
@@ -890,6 +1027,44 @@ export class GetUsageAnalyticsResponse
     public constructor(init?: Partial<GetUsageAnalyticsResponse>) { (Object as any).assign(this, init); }
 }
 
+export class GetRevenueMetricsResponse
+{
+    public currency: string;
+    public mrr: number;
+    public arr: number;
+    /** @description What current trials would add to MRR if they converted */
+    public trialingMrr: number;
+    /** @description Average revenue per paying account */
+    public arpa: number;
+    public paying: number;
+    public plans: PlanRevenueInfo[] = [];
+    public months: RevenueMonth[] = [];
+    /** @description Recurring revenue for each day of up to 3 months of history, otherwise for the last day of each week */
+    public series: RevenuePoint[] = [];
+    /** @description The ten customers billed the most each month */
+    public topCustomers: CustomerRevenueInfo[] = [];
+    public responseStatus?: ResponseStatus;
+
+    public constructor(init?: Partial<GetRevenueMetricsResponse>) { (Object as any).assign(this, init); }
+}
+
+export class GetCustomerHealthResponse
+{
+    public results: CustomerHealthInfo[] = [];
+    /** @description Customers that matched, before Take */
+    public total: number;
+    public healthy: number;
+    public watch: number;
+    public atRisk: number;
+    public churned: number;
+    public currency: string;
+    /** @description MRR of customers graded AtRisk */
+    public mrrAtRisk: number;
+    public responseStatus?: ResponseStatus;
+
+    public constructor(init?: Partial<GetCustomerHealthResponse>) { (Object as any).assign(this, init); }
+}
+
 export class Workspace extends SaasAuditBase
 {
     public id: string;
@@ -914,7 +1089,7 @@ export class GetSaasAnalyticsResponse
     public constructor(init?: Partial<GetSaasAnalyticsResponse>) { (Object as any).assign(this, init); }
 }
 
-export class BillingSubscription extends SaasAuditBase
+export class BillingSubscription extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.Workspace)")
@@ -939,7 +1114,7 @@ export class BillingSubscription extends SaasAuditBase
     public constructor(init?: Partial<BillingSubscription>) { super(init); (Object as any).assign(this, init); }
 }
 
-export class CustomerEntitlementOverride extends SaasAuditBase
+export class CustomerEntitlementOverride extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.Workspace)")
@@ -973,7 +1148,7 @@ export class WorkspaceMemberInfo
     public constructor(init?: Partial<WorkspaceMemberInfo>) { (Object as any).assign(this, init); }
 }
 
-export class SupportNote extends SaasAuditBase
+export class SupportNote extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.Workspace)")
@@ -984,7 +1159,7 @@ export class SupportNote extends SaasAuditBase
     public constructor(init?: Partial<SupportNote>) { super(init); (Object as any).assign(this, init); }
 }
 
-export class WorkspaceLifecycleRequest extends SaasAuditBase
+export class WorkspaceLifecycleRequest extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.Workspace)")
@@ -1002,7 +1177,7 @@ export class WorkspaceLifecycleRequest extends SaasAuditBase
     public constructor(init?: Partial<WorkspaceLifecycleRequest>) { super(init); (Object as any).assign(this, init); }
 }
 
-export class SupportAccessGrant extends SaasAuditBase
+export class SupportAccessGrant extends SaasAuditBase implements IHasWorkspaceId
 {
     public id: string;
     // @References("typeof(MyApp.ServiceModel.Workspace)")
@@ -1020,7 +1195,7 @@ export class SupportAccessGrant extends SaasAuditBase
     public constructor(init?: Partial<SupportAccessGrant>) { super(init); (Object as any).assign(this, init); }
 }
 
-export class WorkspaceRetentionPolicy extends SaasAuditBase
+export class WorkspaceRetentionPolicy extends SaasAuditBase implements IHasWorkspaceId
 {
     // @References("typeof(MyApp.ServiceModel.Workspace)")
     public workspaceId: string;
@@ -1121,6 +1296,15 @@ export class QueryWorkspaceAuditEventsResponse
     public responseStatus?: ResponseStatus;
 
     public constructor(init?: Partial<QueryWorkspaceAuditEventsResponse>) { (Object as any).assign(this, init); }
+}
+
+export class QueryPlatformAuditEventsResponse
+{
+    public results: AuditEventInfo[] = [];
+    public total: number;
+    public responseStatus?: ResponseStatus;
+
+    public constructor(init?: Partial<QueryPlatformAuditEventsResponse>) { (Object as any).assign(this, init); }
 }
 
 export class PreviewSaasCustomerOperationResponse
@@ -1357,8 +1541,9 @@ export class AuthenticateResponse implements IHasSessionId, IHasBearerToken
 
 // @Route("/saas/files", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class QueryStoredFiles implements IReturn<QueryStoredFilesResponse>, IGet
+export class QueryStoredFiles implements IReturn<QueryStoredFilesResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     public search?: string;
     public skip: number;
     public take: number;
@@ -1371,8 +1556,9 @@ export class QueryStoredFiles implements IReturn<QueryStoredFilesResponse>, IGet
 
 // @Route("/saas/files", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class UploadStoredFile implements IReturn<StoredFileInfo>, IPost
+export class UploadStoredFile implements IReturn<StoredFileInfo>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public idempotencyKey: string;
 
@@ -1384,8 +1570,9 @@ export class UploadStoredFile implements IReturn<StoredFileInfo>, IPost
 
 // @Route("/saas/files/{Id}", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class DownloadStoredFile implements IReturn<Blob>, IGet
+export class DownloadStoredFile implements IReturn<Blob>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -1397,8 +1584,9 @@ export class DownloadStoredFile implements IReturn<Blob>, IGet
 
 // @Route("/saas/files/{Id}", "DELETE")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class DeleteStoredFile implements IReturn<EmptyResponse>, IDelete
+export class DeleteStoredFile implements IReturn<EmptyResponse>, IDelete, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -1410,8 +1598,9 @@ export class DeleteStoredFile implements IReturn<EmptyResponse>, IDelete
 
 // @Route("/saas/lifecycle/exports/{Id}", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class DownloadWorkspaceExport implements IReturn<Blob>, IGet
+export class DownloadWorkspaceExport implements IReturn<Blob>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -1488,8 +1677,9 @@ export class ConfirmEmail implements IReturnVoid, IGet
 
 // @Route("/saas/entitlements", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetEffectiveEntitlements implements IReturn<GetEffectiveEntitlementsResponse>, IGet
+export class GetEffectiveEntitlements implements IReturn<GetEffectiveEntitlementsResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<GetEffectiveEntitlements>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'GetEffectiveEntitlements'; }
@@ -1499,8 +1689,9 @@ export class GetEffectiveEntitlements implements IReturn<GetEffectiveEntitlement
 
 // @Route("/saas/usage/analytics", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetUsageAnalytics implements IReturn<GetUsageAnalyticsResponse>, IGet
+export class GetUsageAnalytics implements IReturn<GetUsageAnalyticsResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     public meterKey?: string;
     public days: number;
 
@@ -1512,8 +1703,9 @@ export class GetUsageAnalytics implements IReturn<GetUsageAnalyticsResponse>, IG
 
 // @Route("/saas/usage/export", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class ExportUsageCsv implements IReturn<Blob>, IGet
+export class ExportUsageCsv implements IReturn<Blob>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     public meterKey?: string;
     public days: number;
 
@@ -1521,6 +1713,40 @@ export class ExportUsageCsv implements IReturn<Blob>, IGet
     public getTypeName() { return 'ExportUsageCsv'; }
     public getMethod() { return 'GET'; }
     public createResponse() { return new Blob(); }
+}
+
+/** @description Recurring revenue now, its daily history, each month's new, expansion, contraction and churned MRR, and the largest customers */
+// @Route("/saas/admin/revenue", "GET")
+// @ValidateRequest(Validator="IsAuthenticated")
+export class GetRevenueMetrics implements IReturn<GetRevenueMetricsResponse>, IGet
+{
+    /** @description Months of history, including the current month, from 1 to 12 */
+    public months: number;
+
+    public constructor(init?: Partial<GetRevenueMetrics>) { (Object as any).assign(this, init); }
+    public getTypeName() { return 'GetRevenueMetrics'; }
+    public getMethod() { return 'GET'; }
+    public createResponse() { return new GetRevenueMetricsResponse(); }
+}
+
+/** @description Each customer's health score from 0 to 100 and grade, with the signals behind it: usage trend, inactivity, quota pressure, failed payments and billing status */
+// @Route("/saas/admin/customer-health", "GET")
+// @ValidateRequest(Validator="IsAuthenticated")
+export class GetCustomerHealth implements IReturn<GetCustomerHealthResponse>, IGet
+{
+    /** @description Only this customer */
+    public workspaceId?: string;
+    /** @description Only customers with this grade */
+    public grade?: CustomerHealthGrade;
+    /** @description Include customers whose subscription was canceled */
+    public includeChurned: boolean;
+    /** @description The most customers to return, from 1 to 200 */
+    public take: number;
+
+    public constructor(init?: Partial<GetCustomerHealth>) { (Object as any).assign(this, init); }
+    public getTypeName() { return 'GetCustomerHealth'; }
+    public getMethod() { return 'GET'; }
+    public createResponse() { return new GetCustomerHealthResponse(); }
 }
 
 // @Route("/saas/admin/analytics", "GET")
@@ -1752,8 +1978,9 @@ export class QueryPlatformOperators implements IReturn<QueryPlatformOperatorsRes
 
 // @Route("/saas/notifications/preferences", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetNotificationPreferences implements IReturn<GetNotificationPreferencesResponse>, IGet
+export class GetNotificationPreferences implements IReturn<GetNotificationPreferencesResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<GetNotificationPreferences>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'GetNotificationPreferences'; }
@@ -1763,8 +1990,9 @@ export class GetNotificationPreferences implements IReturn<GetNotificationPrefer
 
 // @Route("/saas/notifications/preferences", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class UpdateNotificationPreferences implements IReturn<GetNotificationPreferencesResponse>, IPost
+export class UpdateNotificationPreferences implements IReturn<GetNotificationPreferencesResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     public preferences: NotificationPreferenceInput[] = [];
 
     public constructor(init?: Partial<UpdateNotificationPreferences>) { (Object as any).assign(this, init); }
@@ -1775,8 +2003,9 @@ export class UpdateNotificationPreferences implements IReturn<GetNotificationPre
 
 // @Route("/saas/notifications", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class QueryNotifications implements IReturn<QueryNotificationsResponse>, IGet
+export class QueryNotifications implements IReturn<QueryNotificationsResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     public unreadOnly?: boolean;
     public skip: number;
     public take: number;
@@ -1789,8 +2018,9 @@ export class QueryNotifications implements IReturn<QueryNotificationsResponse>, 
 
 // @Route("/saas/notifications/{Id}/read", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class MarkNotificationRead implements IReturn<EmptyResponse>, IPost
+export class MarkNotificationRead implements IReturn<EmptyResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -1802,10 +2032,11 @@ export class MarkNotificationRead implements IReturn<EmptyResponse>, IPost
 
 // @Route("/saas/audit", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class QueryWorkspaceAuditEvents implements IReturn<QueryWorkspaceAuditEventsResponse>, IGet
+export class QueryWorkspaceAuditEvents implements IReturn<QueryWorkspaceAuditEventsResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     public action?: string;
-    public skip: number;
+    public afterId?: string;
     public take: number;
 
     public constructor(init?: Partial<QueryWorkspaceAuditEvents>) { (Object as any).assign(this, init); }
@@ -1816,8 +2047,9 @@ export class QueryWorkspaceAuditEvents implements IReturn<QueryWorkspaceAuditEve
 
 // @Route("/saas/audit/export", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class ExportWorkspaceAuditCsv implements IReturn<Blob>, IGet
+export class ExportWorkspaceAuditCsv implements IReturn<Blob>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
     public action?: string;
     public days: number;
 
@@ -1829,7 +2061,7 @@ export class ExportWorkspaceAuditCsv implements IReturn<Blob>, IGet
 
 // @Route("/saas/admin/audit", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class QueryPlatformAuditEvents implements IReturn<QueryWorkspaceAuditEventsResponse>, IGet
+export class QueryPlatformAuditEvents implements IReturn<QueryPlatformAuditEventsResponse>, IGet
 {
     public search?: string;
     public workspaceId?: string;
@@ -1844,7 +2076,7 @@ export class QueryPlatformAuditEvents implements IReturn<QueryWorkspaceAuditEven
     public constructor(init?: Partial<QueryPlatformAuditEvents>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'QueryPlatformAuditEvents'; }
     public getMethod() { return 'GET'; }
-    public createResponse() { return new QueryWorkspaceAuditEventsResponse(); }
+    public createResponse() { return new QueryPlatformAuditEventsResponse(); }
 }
 
 // @Route("/saas/admin/audit/export", "GET")
@@ -1920,8 +2152,9 @@ export class PreviewSaasCustomerOperation implements IReturn<PreviewSaasCustomer
 
 // @Route("/saas/lifecycle/export", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class CreateWorkspaceExport implements IReturn<WorkspaceLifecycleRequest>, IPost
+export class CreateWorkspaceExport implements IReturn<WorkspaceLifecycleRequest>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<CreateWorkspaceExport>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'CreateWorkspaceExport'; }
@@ -1931,8 +2164,9 @@ export class CreateWorkspaceExport implements IReturn<WorkspaceLifecycleRequest>
 
 // @Route("/saas/lifecycle/delete", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class RequestWorkspaceDeletion implements IReturn<WorkspaceLifecycleRequest>, IPost
+export class RequestWorkspaceDeletion implements IReturn<WorkspaceLifecycleRequest>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public confirmation: string;
 
@@ -1944,8 +2178,9 @@ export class RequestWorkspaceDeletion implements IReturn<WorkspaceLifecycleReque
 
 // @Route("/saas/lifecycle/delete/cancel", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class CancelWorkspaceDeletion implements IReturn<WorkspaceLifecycleRequest>, IPost
+export class CancelWorkspaceDeletion implements IReturn<WorkspaceLifecycleRequest>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<CancelWorkspaceDeletion>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'CancelWorkspaceDeletion'; }
@@ -1955,8 +2190,9 @@ export class CancelWorkspaceDeletion implements IReturn<WorkspaceLifecycleReques
 
 // @Route("/saas/lifecycle/transfer", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class TransferWorkspaceOwnership implements IReturn<EmptyResponse>, IPost
+export class TransferWorkspaceOwnership implements IReturn<EmptyResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public targetUserId: string;
 
@@ -1968,8 +2204,9 @@ export class TransferWorkspaceOwnership implements IReturn<EmptyResponse>, IPost
 
 // @Route("/saas/lifecycle/leave", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class LeaveWorkspace implements IReturn<EmptyResponse>, IPost
+export class LeaveWorkspace implements IReturn<EmptyResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<LeaveWorkspace>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'LeaveWorkspace'; }
@@ -1979,8 +2216,9 @@ export class LeaveWorkspace implements IReturn<EmptyResponse>, IPost
 
 // @Route("/saas/lifecycle", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetWorkspaceLifecycle implements IReturn<GetWorkspaceLifecycleResponse>, IGet
+export class GetWorkspaceLifecycle implements IReturn<GetWorkspaceLifecycleResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<GetWorkspaceLifecycle>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'GetWorkspaceLifecycle'; }
@@ -2000,8 +2238,9 @@ export class GetSaasPlans implements IReturn<GetSaasPlansResponse>, IGet
 
 // @Route("/saas/dashboard", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetSaasDashboard implements IReturn<GetSaasDashboardResponse>, IGet
+export class GetSaasDashboard implements IReturn<GetSaasDashboardResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<GetSaasDashboard>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'GetSaasDashboard'; }
@@ -2011,8 +2250,9 @@ export class GetSaasDashboard implements IReturn<GetSaasDashboardResponse>, IGet
 
 // @Route("/saas/api-keys", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetWorkspaceApiKeys implements IReturn<GetWorkspaceApiKeysResponse>, IGet
+export class GetWorkspaceApiKeys implements IReturn<GetWorkspaceApiKeysResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<GetWorkspaceApiKeys>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'GetWorkspaceApiKeys'; }
@@ -2063,8 +2303,9 @@ export class SwitchWorkspace implements IReturn<EmptyResponse>, IPost
 
 // @Route("/saas/usage", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class RecordUsage implements IReturn<RecordUsageResponse>, IPost
+export class RecordUsage implements IReturn<RecordUsageResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     public meterKey: string;
     // @Validate(Validator="GreaterThan(0)")
     public units: number;
@@ -2082,8 +2323,9 @@ export class RecordUsage implements IReturn<RecordUsageResponse>, IPost
 
 // @Route("/saas/workspace", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class UpdateWorkspaceProfile implements IReturn<Workspace>, IPost
+export class UpdateWorkspaceProfile implements IReturn<Workspace>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public name: string;
 
@@ -2101,8 +2343,9 @@ export class UpdateWorkspaceProfile implements IReturn<Workspace>, IPost
 
 // @Route("/saas/members", "GET")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class GetWorkspaceMembers implements IReturn<GetWorkspaceMembersResponse>, IGet
+export class GetWorkspaceMembers implements IReturn<GetWorkspaceMembersResponse>, IGet, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<GetWorkspaceMembers>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'GetWorkspaceMembers'; }
@@ -2112,8 +2355,9 @@ export class GetWorkspaceMembers implements IReturn<GetWorkspaceMembersResponse>
 
 // @Route("/saas/members", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class InviteWorkspaceMember implements IReturn<WorkspaceMemberInfo>, IPost
+export class InviteWorkspaceMember implements IReturn<WorkspaceMemberInfo>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     // @Validate(Validator="Email")
     public email: string;
@@ -2128,8 +2372,9 @@ export class InviteWorkspaceMember implements IReturn<WorkspaceMemberInfo>, IPos
 
 // @Route("/saas/workspace/invitations/{Id}/resend", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class ResendWorkspaceInvitation implements IReturn<WorkspaceMemberInfo>, IPost
+export class ResendWorkspaceInvitation implements IReturn<WorkspaceMemberInfo>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -2154,8 +2399,9 @@ export class AcceptWorkspaceInvitation implements IReturn<WorkspaceAccessInfo>, 
 
 // @Route("/saas/workspace/members/{Id}/role", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class UpdateWorkspaceMemberRole implements IReturn<WorkspaceMemberInfo>, IPost
+export class UpdateWorkspaceMemberRole implements IReturn<WorkspaceMemberInfo>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -2169,8 +2415,9 @@ export class UpdateWorkspaceMemberRole implements IReturn<WorkspaceMemberInfo>, 
 
 // @Route("/saas/workspace/members/{Id}", "DELETE")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class RemoveWorkspaceMember implements IReturn<EmptyResponse>, IDelete
+export class RemoveWorkspaceMember implements IReturn<EmptyResponse>, IDelete, IRequireWorkspace
 {
+    public workspaceId: string;
     // @Validate(Validator="NotEmpty")
     public id: string;
 
@@ -2182,8 +2429,9 @@ export class RemoveWorkspaceMember implements IReturn<EmptyResponse>, IDelete
 
 // @Route("/saas/billing/checkout", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class CreateCheckoutSession implements IReturn<CreateBillingSessionResponse>, IPost
+export class CreateCheckoutSession implements IReturn<CreateBillingSessionResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     public priceId: string;
 
     public constructor(init?: Partial<CreateCheckoutSession>) { (Object as any).assign(this, init); }
@@ -2194,8 +2442,9 @@ export class CreateCheckoutSession implements IReturn<CreateBillingSessionRespon
 
 // @Route("/saas/billing/checkout/confirm", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class ConfirmCheckoutSession implements IReturn<ConfirmCheckoutSessionResponse>, IPost
+export class ConfirmCheckoutSession implements IReturn<ConfirmCheckoutSessionResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
     public sessionId?: string;
 
     public constructor(init?: Partial<ConfirmCheckoutSession>) { (Object as any).assign(this, init); }
@@ -2206,8 +2455,9 @@ export class ConfirmCheckoutSession implements IReturn<ConfirmCheckoutSessionRes
 
 // @Route("/saas/billing/portal", "POST")
 // @ValidateRequest(Validator="IsAuthenticated")
-export class CreateCustomerPortalSession implements IReturn<CreateBillingSessionResponse>, IPost
+export class CreateCustomerPortalSession implements IReturn<CreateBillingSessionResponse>, IPost, IRequireWorkspace
 {
+    public workspaceId: string;
 
     public constructor(init?: Partial<CreateCustomerPortalSession>) { (Object as any).assign(this, init); }
     public getTypeName() { return 'CreateCustomerPortalSession'; }

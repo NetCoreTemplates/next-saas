@@ -1,4 +1,5 @@
 using System.Data;
+using System.Linq.Expressions;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -51,16 +52,27 @@ public interface IStripeBillingGateway
     Task<ProvisionSaasPlanStripeCatalogResponse> ProvisionCatalogAsync(SaasPlan plan, string name, string description,
         IReadOnlyCollection<SavePlanPrice> prices, CancellationToken token = default);
     Task<string> CreateCheckoutAsync(Workspace workspace, SaasPlanPrice price, string successUrl, string cancelUrl, int? trialDays, CancellationToken token = default);
+    // Methods given a connection and an organization need the connection to be confined to the organization
     Task<bool> ConfirmCheckoutAsync(IDbConnection db, Workspace workspace, string? sessionId, CancellationToken token = default);
     Task<string> CreatePortalAsync(Workspace workspace, string returnUrl, CancellationToken token = default);
     Task<bool> ReconcileSubscriptionAsync(IDbConnection db, Workspace workspace, CancellationToken token = default);
     StripeWebhookEnvelope ValidateWebhook(string payload, string signature);
-    Task ApplyWebhookAsync(IDbConnection db, StripeEventInbox inbox, CancellationToken token = default);
+    /// <summary>
+    /// The organization a webhook event is for, found on a connection that isn't confined to one, or null
+    /// </summary>
+    Workspace? FindWebhookWorkspace(IDbConnection db, StripeEventInbox inbox);
+    Task ApplyWebhookAsync(IDbConnection db, Workspace workspace, StripeEventInbox inbox, CancellationToken token = default);
 }
 
 public interface ISaasManager
 {
     Workspace EnsurePersonalWorkspace(IDbConnection db, string userId, string? displayName, string? email);
+    /// <summary>
+    /// The organization and the membership of the connection's user. It fails if they aren't an active member,
+    /// or if the organization's state doesn't allow the access the API needs.
+    /// It's called for every <see cref="IRequireWorkspace"/> API when its connection is opened, see SaasDb.ForRequest().
+    /// </summary>
+    (Workspace Workspace, WorkspaceMember Member) AssertMembership(IDbConnection db, string workspaceId, WorkspaceAccess access);
     Workspace CreateOrganization(IDbConnection db, string userId, string name, string? billingEmail);
     PlanInfo GetPlanInfo(IDbConnection db, string planVersionId);
     void EvaluateAccess(IDbConnection db, Workspace workspace, BillingSubscription subscription);
@@ -71,22 +83,47 @@ public interface ISaasManager
     UsageSummary ReleaseUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription, string userId, string reservationId);
     UsageSummary AdjustGauge(IDbConnection db, Workspace workspace, BillingSubscription subscription, string userId, string meterKey, long delta, string idempotencyKey, string source);
     SaasPlanDetails GetPlanDetails(IDbConnection db, string planId);
-    SaasPlanDetails EnsurePlanDraftForStripeCatalog(IDbConnection db, string actorId, string planId);
-    SaasPlanDetails SavePlanDraft(IDbConnection db, string actorId, SaveSaasPlanDraft request);
-    SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string actorId, string planId, ProvisionSaasPlanStripeCatalogResponse result);
-    SaasPlanDetails PublishPlanDraft(IDbConnection db, string actorId, string planId);
+    SaasPlanDetails EnsurePlanDraftForStripeCatalog(IDbConnection db, string userId, string planId);
+    SaasPlanDetails SavePlanDraft(IDbConnection db, string userId, SaveSaasPlanDraft request);
+    SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string userId, string planId, ProvisionSaasPlanStripeCatalogResponse result);
+    SaasPlanDetails PublishPlanDraft(IDbConnection db, string userId, string planId);
 }
 
 public class SaasManager(SaasConfig config) : ISaasManager
 {
     public void EvaluateAccess(IDbConnection db, Workspace workspace, BillingSubscription subscription) => ApplyLifecyclePolicy(db, workspace, subscription);
+    public (Workspace Workspace, WorkspaceMember Member) AssertMembership(IDbConnection db, string workspaceId, WorkspaceAccess access)
+    {
+        var userId = db.GetUserId() ?? throw HttpError.Unauthorized("Authentication is required.");
+        if (workspaceId.IsNullOrEmpty())
+            throw new HttpError(400, "WorkspaceIdRequired", "The request needs the WorkspaceId of the organization it's for.");
+
+        // Whether the user is a member isn't known yet, so it's looked up across organizations
+        db = db.AcrossWorkspaces();
+        var workspace = db.SingleById<Workspace>(workspaceId);
+        if (workspace == null || workspace.Status == WorkspaceStatus.Deleted)
+            throw new HttpError(403, "WorkspaceAccessDenied", "This organization is no longer available.");
+        var member = db.Single<WorkspaceMember>(x => x.WorkspaceId == workspaceId && x.UserId == userId && x.Status == WorkspaceMemberStatus.Active)
+            ?? throw new HttpError(403, "WorkspaceAccessDenied", "You do not have access to this organization.");
+
+        if (access != WorkspaceAccess.Account)
+        {
+            // The subscription's access mode is kept up to date with its billing state before it's checked
+            var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspaceId)
+                ?? throw new HttpError(404, "SubscriptionNotFound", "The organization subscription was not found.");
+            EvaluateAccess(db, workspace, subscription);
+            WorkspaceAccessPolicy.Require(access, workspace, subscription);
+        }
+        return (workspace, member);
+    }
+
     public Workspace EnsurePersonalWorkspace(IDbConnection db, string userId, string? displayName, string? email)
     {
+        using var _ = db.WithUserId(userId);
         var member = FindActiveMembership(db, userId);
         if (member != null)
         {
             SaveWorkspacePreference(db, userId, member.WorkspaceId);
-            BindLegacyApiKeys(db, userId, member.WorkspaceId);
             return db.SingleById<Workspace>(member.WorkspaceId);
         }
         if (!config.EnablePersonalWorkspaces)
@@ -109,7 +146,6 @@ public class SaasManager(SaasConfig config) : ISaasManager
             if (member != null)
             {
                 SaveWorkspacePreference(db, userId, member.WorkspaceId);
-                BindLegacyApiKeys(db, userId, member.WorkspaceId);
                 return db.SingleById<Workspace>(member.WorkspaceId);
             }
 
@@ -121,13 +157,11 @@ public class SaasManager(SaasConfig config) : ISaasManager
             var now = DateTime.UtcNow;
             var workspace = new Workspace {
                 Name = name, Slug = slug, BillingEmail = email, Kind = WorkspaceKind.Individual,
-                CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
             };
             var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
             var subscription = new BillingSubscription {
                 WorkspaceId = workspace.Id, PlanVersionId = version.Id, Status = SubscriptionStatus.Free,
                 PeriodStart = periodStart, PeriodEnd = periodStart.AddMonths(1),
-                CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
             };
 
             try
@@ -138,20 +172,17 @@ public class SaasManager(SaasConfig config) : ISaasManager
                     db.Insert(new WorkspaceMember {
                         WorkspaceId = workspace.Id, UserId = userId, Role = WorkspaceMemberRole.Owner,
                         Status = WorkspaceMemberStatus.Active, JoinedDate = now,
-                        CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
                     });
                     db.Insert(new UserWorkspacePreference {
                         UserId = userId, ActiveWorkspaceId = workspace.Id,
-                        CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
                     });
                     db.Insert(subscription);
                     db.Insert(new SaasAuditEvent {
                         WorkspaceId = workspace.Id, Category = "workspace", Action = "created",
-                        ActorId = userId, SubjectId = workspace.Id, CreatedDate = now,
+                        UserId = userId, SubjectId = workspace.Id, CreatedDate = now,
                     });
                     tx.Commit();
                 }
-                BindLegacyApiKeys(db, userId, workspace.Id);
                 return workspace;
             }
             catch (Exception ex) when (IsWorkspaceCreationRace(ex))
@@ -164,7 +195,6 @@ public class SaasManager(SaasConfig config) : ISaasManager
         if (member != null)
         {
             SaveWorkspacePreference(db, userId, member.WorkspaceId);
-            BindLegacyApiKeys(db, userId, member.WorkspaceId);
             return db.SingleById<Workspace>(member.WorkspaceId);
         }
         throw new HttpError(409, "WorkspaceCreationConflict", "The organization could not be created because another request is still changing this account. Please retry.");
@@ -172,6 +202,7 @@ public class SaasManager(SaasConfig config) : ISaasManager
 
     public Workspace CreateOrganization(IDbConnection db, string userId, string name, string? billingEmail)
     {
+        using var _ = db.WithUserId(userId);
         var normalizedName = name.Trim();
         var slugBase = Slugify(normalizedName);
         var slug = slugBase;
@@ -187,7 +218,6 @@ public class SaasManager(SaasConfig config) : ISaasManager
         var now = DateTime.UtcNow;
         var workspace = new Workspace {
             Name = normalizedName, Slug = slug, BillingEmail = billingEmail?.Trim(), Kind = WorkspaceKind.Business,
-            CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
         };
         var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         using var tx = db.OpenTransaction();
@@ -195,17 +225,15 @@ public class SaasManager(SaasConfig config) : ISaasManager
         db.Insert(new WorkspaceMember {
             WorkspaceId = workspace.Id, UserId = userId, Role = WorkspaceMemberRole.Owner,
             Status = WorkspaceMemberStatus.Active, JoinedDate = now,
-            CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
         });
         db.Insert(new BillingSubscription {
             WorkspaceId = workspace.Id, PlanVersionId = version.Id, Status = SubscriptionStatus.Free,
             PeriodStart = periodStart, PeriodEnd = periodStart.AddMonths(1),
-            CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
         });
         SaveWorkspacePreference(db, userId, workspace.Id);
         db.Insert(new SaasAuditEvent {
             WorkspaceId = workspace.Id, Category = "workspace", Action = "created",
-            ActorId = userId, SubjectId = workspace.Id, CreatedDate = now,
+            UserId = userId, SubjectId = workspace.Id, CreatedDate = now,
         });
         tx.Commit();
         return workspace;
@@ -238,34 +266,21 @@ public class SaasManager(SaasConfig config) : ISaasManager
 
     private static void SaveWorkspacePreference(IDbConnection db, string userId, string workspaceId)
     {
-        var now = DateTime.UtcNow;
         var preference = db.SingleById<UserWorkspacePreference>(userId);
         if (preference?.ActiveWorkspaceId == workspaceId) return;
-        preference ??= new UserWorkspacePreference { UserId = userId, CreatedDate = now, CreatedBy = userId };
+        preference ??= new UserWorkspacePreference { UserId = userId };
         preference.ActiveWorkspaceId = workspaceId;
-        preference.ModifiedDate = now;
-        preference.ModifiedBy = userId;
         db.Save(preference);
-    }
-
-    private static void BindLegacyApiKeys(IDbConnection db, string userId, string workspaceId)
-    {
-        if (!db.TableExists<ApiKeysFeature.ApiKey>()) return;
-        foreach (var apiKey in db.Select<ApiKeysFeature.ApiKey>(x => x.UserId == userId && x.RefIdStr == null))
-        {
-            apiKey.RefIdStr = workspaceId;
-            db.Update(apiKey);
-        }
     }
 
     public PlanInfo GetPlanInfo(IDbConnection db, string planVersionId)
     {
-        var version = db.SingleById<SaasPlanVersion>(planVersionId)
+        var version = db.Single(SaasQueries.PlanVersionById, planVersionId)
             ?? throw new HttpError(404, "PlanVersionNotFound", "The selected plan version was not found.");
-        var plan = db.SingleById<SaasPlan>(version.PlanId);
-        var features = db.Select<SaasPlanFeature>(x => x.PlanVersionId == version.Id && x.Enabled).OrderBy(x => x.DisplayOrder);
-        var quotas = db.Select<SaasPlanQuota>(x => x.PlanVersionId == version.Id);
-        var prices = db.Select<SaasPlanPrice>(x => x.PlanVersionId == version.Id && x.IsActive);
+        var plan = db.Single(SaasQueries.PlanById, version.PlanId);
+        var features = db.Select(SaasQueries.EnabledFeatures, version.Id);
+        var quotas = db.Select(SaasQueries.Quotas, version.Id);
+        var prices = db.Select(SaasQueries.ActivePrices, version.Id);
         return new PlanInfo {
             Id = version.Id, Code = plan.Code, Name = version.Name ?? plan.Name,
             Description = version.Description ?? plan.Description,
@@ -283,8 +298,11 @@ public class SaasManager(SaasConfig config) : ISaasManager
         };
     }
 
+    // Usage is read and written on a connection confined to the organization, which adds its condition to every
+    // query and its WorkspaceId to every row, so they're not written here
     public List<UsageSummary> GetUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription)
     {
+        db.AssertConfinedTo(workspace.Id);
         ApplyLifecyclePolicy(db, workspace, subscription);
         EnsureCurrentFreePeriod(db, subscription);
         var plan = GetPlanInfo(db, GetEffectivePlanVersionId(db, subscription));
@@ -292,18 +310,16 @@ public class SaasManager(SaasConfig config) : ISaasManager
         var results = new List<UsageSummary>();
         foreach (var quota in plan.Quotas)
         {
-            var activeOverride = db.Single<CustomerEntitlementOverride>(x => x.WorkspaceId == workspace.Id && x.Key == quota.MeterKey
-                && (x.ValidFrom == null || x.ValidFrom <= now) && (x.ValidUntil == null || x.ValidUntil > now));
+            var activeOverride = db.Single(SaasQueries.ActiveOverride, quota.MeterKey, now);
             var allowance = activeOverride?.QuotaUnits ?? quota.IncludedUnits;
-            var usagePeriod = EnsureUsagePeriod(db, workspace.Id, subscription, quota, allowance,
+            var usagePeriod = EnsureUsagePeriod(db, subscription, quota, allowance,
                 activeOverride == null ? "plan" : "customer-override");
-            var aggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == usagePeriod.Id);
+            var aggregate = db.Single(SaasQueries.AggregateOfPeriod, usagePeriod.Id);
             if (quota.MeterKey == "workspace.seats")
             {
-                aggregate.UsedUnits = db.Count<WorkspaceMember>(x => x.WorkspaceId == workspace.Id && x.Status != WorkspaceMemberStatus.Disabled);
-                aggregate.ModifiedDate = now;
-                aggregate.ModifiedBy = "membership-projection";
-                db.Update(aggregate);
+                aggregate.UsedUnits = db.Count(SaasQueries.SeatsInUse);
+                using (db.WithUserId("membership-projection"))
+                    db.Update(aggregate);
             }
             results.Add(ToSummary(usagePeriod, aggregate, quota.DisplayName));
         }
@@ -312,11 +328,13 @@ public class SaasManager(SaasConfig config) : ISaasManager
 
     public RecordUsageResponse RecordUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription, string userId, RecordUsage request)
     {
-        var duplicate = db.Single<UsageEvent>(x => x.WorkspaceId == workspace.Id && x.IdempotencyKey == request.IdempotencyKey);
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId(userId);
+        var duplicate = db.Single(SaasQueries.UsageEventByKey, request.IdempotencyKey);
         if (duplicate != null)
         {
             var duplicatePeriod = db.SingleById<UsagePeriod>(duplicate.UsagePeriodId);
-            var duplicateAggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == duplicatePeriod.Id);
+            var duplicateAggregate = db.Single(SaasQueries.AggregateOfPeriod, duplicatePeriod.Id);
             var displayName = GetPlanInfo(db, GetEffectivePlanVersionId(db, subscription)).Quotas
                 .FirstOrDefault(x => x.MeterKey == duplicate.MeterKey)?.DisplayName ?? duplicate.MeterKey;
             return new RecordUsageResponse { Accepted = true, Duplicate = true, Usage = ToSummary(duplicatePeriod, duplicateAggregate, displayName) };
@@ -327,45 +345,45 @@ public class SaasManager(SaasConfig config) : ISaasManager
         if (usage.Kind == MeterKind.Gauge)
             throw new HttpError(409, "GaugeMutationRequired", $"Meter '{request.MeterKey}' is maintained by product operations and cannot be incremented through the public usage API.");
         if (usage.Allowance != null && usage.Enforcement == QuotaEnforcement.HardLimit && usage.UsedUnits + request.Units > usage.Allowance)
-            throw QuotaExceeded(db, workspace, userId, usage, request.Units, "consume");
+            throw QuotaExceeded(db, userId, usage, request.Units, "consume");
 
-        var period = db.Single<UsagePeriod>(x => x.WorkspaceId == workspace.Id && x.MeterKey == request.MeterKey
-            && x.PeriodStart == usage.PeriodStart);
-        var aggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == period.Id);
+        var period = db.Single(SaasQueries.PeriodOfMeter, request.MeterKey, usage.PeriodStart);
+        var aggregate = db.Single(SaasQueries.AggregateOfPeriod, period.Id);
         var now = DateTime.UtcNow;
-        using var tx = db.OpenTransaction();
-        db.Insert(new UsageEvent {
-            WorkspaceId = workspace.Id, UsagePeriodId = period.Id, MeterKey = request.MeterKey,
-            Units = request.Units, IdempotencyKey = request.IdempotencyKey, Source = "api",
-            MetadataJson = request.MetadataJson, RecordedDate = now, RecordedBy = userId,
+        db.RunInTransaction(() => {
+            db.Insert(new UsageEvent {
+                UsagePeriodId = period.Id, MeterKey = request.MeterKey,
+                Units = request.Units, IdempotencyKey = request.IdempotencyKey, Source = "api",
+                MetadataJson = request.MetadataJson, RecordedDate = now, RecordedBy = userId,
+            });
+            // Every value is sent as a db param, and the table and columns are quoted by the database's dialect.
+            // It's a complete SQL statement, which connection filters don't change, so it says which organization.
+            var UsageAggregate = db.TableRef<UsageAggregate>();
+            var (Id, WorkspaceId, UsedUnits, ReservedUnits, PeakUnits, LastEventDate, ModifiedDate, ModifiedBy) =
+                db.ColumnRefs<UsageAggregate>(x => new {
+                    x.Id, x.WorkspaceId, x.UsedUnits, x.ReservedUnits, x.PeakUnits, x.LastEventDate, x.ModifiedDate, x.ModifiedBy });
+            var units = request.Units;
+            var limit = HardLimit(period.Enforcement, period.Allowance);
+            var updated = db.ExecuteSql(Sql.Fmt($@"UPDATE {UsageAggregate}
+SET {PeakUnits} = CASE WHEN {PeakUnits} > {UsedUnits} + {units} THEN {PeakUnits} ELSE {UsedUnits} + {units} END,
+    {UsedUnits} = {UsedUnits} + {units},
+    {LastEventDate} = {now},
+    {ModifiedDate} = {now},
+    {ModifiedBy} = {userId}
+WHERE {Id} = {aggregate.Id}
+  AND {WorkspaceId} = {workspace.Id}
+  AND {UsedUnits} + {ReservedUnits} + {units} <= {limit}"));
+            if (updated != 1)
+                throw new HttpError(429, "QuotaExceeded", $"This request would exceed the {usage.DisplayName} allowance.");
+            aggregate = db.SingleById<UsageAggregate>(aggregate.Id);
+            if (period.Allowance is > 0)
+            {
+                var previousPercent = (aggregate.UsedUnits - request.Units) * 100d / period.Allowance.Value;
+                var currentPercent = aggregate.UsedUnits * 100d / period.Allowance.Value;
+                foreach (var threshold in config.QuotaWarningPercentages.Where(x => previousPercent < x && currentPercent >= x))
+                    db.Insert(new SaasAuditEvent { Category="usage", Action="quota.warning", UserId="quota-policy", SubjectId=period.Id, DetailJson=new { meterKey=request.MeterKey, threshold, used=aggregate.UsedUnits, allowance=period.Allowance }.ToJson(), CreatedDate=now });
+            }
         });
-        var dialect = db.GetDialectProvider();
-        var table = dialect.GetQuotedTableName(typeof(UsageAggregate));
-        string Col(string name) => dialect.GetQuotedColumnName(name);
-        var used = Col(nameof(UsageAggregate.UsedUnits));
-        var reserved = Col(nameof(UsageAggregate.ReservedUnits));
-        var peak = Col(nameof(UsageAggregate.PeakUnits));
-        var updated = db.ExecuteSql($@"UPDATE {table}
-SET {used} = {used} + @Units,
-    {peak} = CASE WHEN {peak} > {used} + @Units THEN {peak} ELSE {used} + @Units END,
-    {Col(nameof(UsageAggregate.LastEventDate))} = @Now,
-    {Col(nameof(UsageAggregate.ModifiedDate))} = @Now,
-    {Col(nameof(UsageAggregate.ModifiedBy))} = @UserId
-WHERE {Col(nameof(UsageAggregate.Id))} = @Id
-  AND (@HardLimit = 0 OR @Allowance IS NULL OR {used} + {reserved} + @Units <= @Allowance)",
-            new { request.Units, Now = now, UserId = userId, aggregate.Id,
-                HardLimit = period.Enforcement == QuotaEnforcement.HardLimit ? 1 : 0, period.Allowance });
-        if (updated != 1)
-            throw new HttpError(429, "QuotaExceeded", $"This request would exceed the {usage.DisplayName} allowance.");
-        aggregate = db.SingleById<UsageAggregate>(aggregate.Id);
-        if (period.Allowance is > 0)
-        {
-            var previousPercent = (aggregate.UsedUnits - request.Units) * 100d / period.Allowance.Value;
-            var currentPercent = aggregate.UsedUnits * 100d / period.Allowance.Value;
-            foreach (var threshold in config.QuotaWarningPercentages.Where(x => previousPercent < x && currentPercent >= x))
-                db.Insert(new SaasAuditEvent { WorkspaceId=workspace.Id, Category="usage", Action="quota.warning", ActorId="quota-policy", SubjectId=period.Id, DetailJson=new { meterKey=request.MeterKey, threshold, used=aggregate.UsedUnits, allowance=period.Allowance }.ToJson(), CreatedDate=now });
-        }
-        tx.Commit();
         SaasTelemetry.UsageRecorded.Add(request.Units,
             new KeyValuePair<string, object?>("meter", request.MeterKey));
         return new RecordUsageResponse { Accepted = true, Usage = ToSummary(period, aggregate, usage.DisplayName) };
@@ -374,54 +392,49 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
     public UsageReservation ReserveUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription,
         string userId, string meterKey, long units, string idempotencyKey, string? metadataJson = null)
     {
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId(userId);
         if (units <= 0) throw new HttpError(400, "InvalidReservationUnits", "Reserved units must be greater than zero.");
-        var duplicate = db.Single<UsageReservation>(x => x.WorkspaceId == workspace.Id && x.IdempotencyKey == idempotencyKey);
+        var duplicate = db.Single(SaasQueries.ReservationByKey, idempotencyKey);
         if (duplicate != null) return duplicate;
 
         var usage = GetUsage(db, workspace, subscription).FirstOrDefault(x => x.MeterKey == meterKey)
             ?? throw new HttpError(404, "MeterNotFound", $"Meter '{meterKey}' is not defined by the effective plan.");
         if (usage.Allowance != null && usage.Enforcement == QuotaEnforcement.HardLimit && usage.UsedUnits + usage.ReservedUnits + units > usage.Allowance)
-            throw QuotaExceeded(db, workspace, userId, usage, units, "reserve");
+            throw QuotaExceeded(db, userId, usage, units, "reserve");
 
-        var period = db.Single<UsagePeriod>(x => x.WorkspaceId == workspace.Id && x.MeterKey == meterKey && x.PeriodStart == usage.PeriodStart);
-        var aggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == period.Id);
+        var period = db.Single(SaasQueries.PeriodOfMeter, meterKey, usage.PeriodStart);
+        var aggregate = db.Single(SaasQueries.AggregateOfPeriod, period.Id);
         var now = DateTime.UtcNow;
         var reservation = new UsageReservation {
-            WorkspaceId = workspace.Id, UsagePeriodId = period.Id, MeterKey = meterKey,
+            UsagePeriodId = period.Id, MeterKey = meterKey,
             ReservedUnits = units, IdempotencyKey = idempotencyKey, ExpiresAt = now.AddMinutes(30),
-            MetadataJson = metadataJson, CreatedDate = now, ModifiedDate = now, CreatedBy = userId, ModifiedBy = userId,
+            MetadataJson = metadataJson,
         };
-        using var tx = db.OpenTransaction();
-        db.Insert(reservation);
-        var dialect = db.GetDialectProvider();
-        var table = dialect.GetQuotedTableName(typeof(UsageAggregate));
-        string Col(string name) => dialect.GetQuotedColumnName(name);
-        var used = Col(nameof(UsageAggregate.UsedUnits));
-        var reserved = Col(nameof(UsageAggregate.ReservedUnits));
-        var updated = db.ExecuteSql($@"UPDATE {table}
-SET {reserved} = {reserved} + @Units,
-    {Col(nameof(UsageAggregate.ModifiedDate))} = @Now,
-    {Col(nameof(UsageAggregate.ModifiedBy))} = @UserId
-WHERE {Col(nameof(UsageAggregate.Id))} = @Id
-  AND (@HardLimit = 0 OR @Allowance IS NULL OR {used} + {reserved} + @Units <= @Allowance)",
-            new { Units = units, Now = now, UserId = userId, aggregate.Id,
-                HardLimit = usage.Enforcement == QuotaEnforcement.HardLimit ? 1 : 0, usage.Allowance });
-        if (updated != 1)
-            throw new HttpError(429, "QuotaExceeded", $"This operation would exceed the {usage.DisplayName} allowance.");
-        tx.Commit();
+        db.RunInTransaction(() => {
+            db.Insert(reservation);
+            // One statement adds the units and checks the allowance, so concurrent reservations can't exceed it.
+            // The connection sets the row's ModifiedDate and ModifiedBy.
+            var limit = HardLimit(usage.Enforcement, usage.Allowance);
+            var updated = db.UpdateAdd(() => new UsageAggregate { ReservedUnits = units },
+                where: x => x.Id == aggregate.Id && x.UsedUnits + x.ReservedUnits + units <= limit);
+            if (updated != 1)
+                throw new HttpError(429, "QuotaExceeded", $"This operation would exceed the {usage.DisplayName} allowance.");
+        });
         return reservation;
     }
 
     public UsageSummary SettleUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription,
         string userId, string reservationId, long actualUnits)
     {
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId(userId);
         if (actualUnits < 0) throw new HttpError(400, "InvalidSettlementUnits", "Settled units cannot be negative.");
+        // Another organization's reservation isn't found
         var reservation = db.SingleById<UsageReservation>(reservationId)
             ?? throw new HttpError(404, "UsageReservationNotFound", "The usage reservation was not found.");
-        if (reservation.WorkspaceId != workspace.Id)
-            throw new HttpError(403, "WorkspaceAccessDenied", "The reservation belongs to another organization.");
         var period = db.SingleById<UsagePeriod>(reservation.UsagePeriodId);
-        var aggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == period.Id);
+        var aggregate = db.Single(SaasQueries.AggregateOfPeriod, period.Id);
         var displayName = GetPlanInfo(db, GetEffectivePlanVersionId(db, subscription)).Quotas.FirstOrDefault(x => x.MeterKey == period.MeterKey)?.DisplayName ?? period.MeterKey;
         if (reservation.Status == UsageReservationStatus.Settled)
             return ToSummary(period, aggregate, displayName);
@@ -432,99 +445,128 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
             throw new HttpError(429, "QuotaExceeded", "The actual usage exceeds the remaining allowance.");
 
         var now = DateTime.UtcNow;
-        using var tx = db.OpenTransaction();
-        aggregate.ReservedUnits = Math.Max(0, aggregate.ReservedUnits - reservation.ReservedUnits);
-        aggregate.UsedUnits += actualUnits;
-        aggregate.PeakUnits = Math.Max(aggregate.PeakUnits, aggregate.UsedUnits);
-        aggregate.LastEventDate = now;
-        aggregate.ModifiedDate = now;
-        aggregate.ModifiedBy = userId;
-        db.Update(aggregate);
-        reservation.Status = UsageReservationStatus.Settled;
-        reservation.SettledUnits = actualUnits;
-        reservation.SettledDate = now;
-        reservation.ModifiedDate = now;
-        reservation.ModifiedBy = userId;
-        db.Update(reservation);
-        if (actualUnits != 0)
-            db.Insert(new UsageEvent {
-                WorkspaceId = workspace.Id, UsagePeriodId = period.Id, MeterKey = period.MeterKey,
-                Units = actualUnits, IdempotencyKey = $"reservation:{reservation.Id}:settled", Source = "reservation",
-                EventType = "settle", MetadataJson = reservation.MetadataJson, RecordedDate = now, RecordedBy = userId,
-            });
-        tx.Commit();
-        return ToSummary(period, aggregate, displayName);
+        // The allowance only limits usage that's more than was reserved
+        var limit = actualUnits > reservation.ReservedUnits ? HardLimit(period.Enforcement, period.Allowance) : long.MaxValue;
+        var settled = db.RunInTransaction(() => {
+            if (!ClaimReservation(db, reservation.Id, () => new UsageReservation {
+                    Status = UsageReservationStatus.Settled, SettledUnits = actualUnits, SettledDate = now }))
+                return false;
+            if (!CloseReservedUnits(db, workspace.Id, period.Id, reservation.ReservedUnits, actualUnits, limit, userId, now))
+                throw new HttpError(429, "QuotaExceeded", "The actual usage exceeds the remaining allowance.");
+            if (actualUnits != 0)
+                db.Insert(new UsageEvent {
+                    UsagePeriodId = period.Id, MeterKey = period.MeterKey,
+                    Units = actualUnits, IdempotencyKey = $"reservation:{reservation.Id}:settled", Source = "reservation",
+                    EventType = "settle", MetadataJson = reservation.MetadataJson, RecordedDate = now, RecordedBy = userId,
+                });
+            return true;
+        });
+        // Settling a reservation that was settled concurrently returns its usage, as when it was settled before
+        if (!settled && db.SingleById<UsageReservation>(reservation.Id)?.Status != UsageReservationStatus.Settled)
+            throw new HttpError(409, "UsageReservationClosed", "The usage reservation is no longer pending.");
+        return ToSummary(period, db.SingleById<UsageAggregate>(aggregate.Id), displayName);
     }
 
     public UsageSummary ReleaseUsage(IDbConnection db, Workspace workspace, BillingSubscription subscription,
         string userId, string reservationId)
     {
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId(userId);
+        // Another organization's reservation isn't found
         var reservation = db.SingleById<UsageReservation>(reservationId)
             ?? throw new HttpError(404, "UsageReservationNotFound", "The usage reservation was not found.");
-        if (reservation.WorkspaceId != workspace.Id)
-            throw new HttpError(403, "WorkspaceAccessDenied", "The reservation belongs to another organization.");
         var period = db.SingleById<UsagePeriod>(reservation.UsagePeriodId);
-        var aggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == period.Id);
+        var aggregate = db.Single(SaasQueries.AggregateOfPeriod, period.Id);
         var displayName = GetPlanInfo(db, GetEffectivePlanVersionId(db, subscription)).Quotas.FirstOrDefault(x => x.MeterKey == period.MeterKey)?.DisplayName ?? period.MeterKey;
         if (reservation.Status != UsageReservationStatus.Pending)
             return ToSummary(period, aggregate, displayName);
-        var now = DateTime.UtcNow;
-        using var tx = db.OpenTransaction();
-        aggregate.ReservedUnits = Math.Max(0, aggregate.ReservedUnits - reservation.ReservedUnits);
-        aggregate.ModifiedDate = now;
-        aggregate.ModifiedBy = userId;
-        db.Update(aggregate);
-        reservation.Status = UsageReservationStatus.Released;
-        reservation.ModifiedDate = now;
-        reservation.ModifiedBy = userId;
-        db.Update(reservation);
-        tx.Commit();
-        return ToSummary(period, aggregate, displayName);
+        db.RunInTransaction(() => {
+            if (ClaimReservation(db, reservation.Id, () => new UsageReservation { Status = UsageReservationStatus.Released }))
+                CloseReservedUnits(db, workspace.Id, period.Id, reservation.ReservedUnits, 0, long.MaxValue, userId, DateTime.UtcNow);
+        });
+        return ToSummary(period, db.SingleById<UsageAggregate>(aggregate.Id), displayName);
+    }
+
+    /// <summary>
+    /// Closes a pending reservation with the fields of status. Returns false when it isn't pending, so a reservation
+    /// that's settled, released or expired at the same time is only closed once.
+    /// </summary>
+    public static bool ClaimReservation(IDbConnection db, string reservationId, Expression<Func<UsageReservation>> status) =>
+        db.UpdateOnly(status, where: x => x.Id == reservationId && x.Status == UsageReservationStatus.Pending) == 1;
+
+    /// <summary>
+    /// Takes the units of a closed reservation off its aggregate and adds the units it used, in one statement so it
+    /// can't overwrite a concurrent change to the aggregate. Returns false when it would exceed the limit.
+    /// It's a complete SQL statement, which connection filters don't change, so it says which organization.
+    /// </summary>
+    public static bool CloseReservedUnits(IDbConnection db, string workspaceId, string usagePeriodId,
+        long reservedUnits, long usedUnits, long limit, string userId, DateTime now)
+    {
+        // Every value is sent as a db param, and the table and columns are quoted by the database's dialect
+        var UsageAggregate = db.TableRef<UsageAggregate>();
+        var (WorkspaceId, UsagePeriodId, UsedUnits, ReservedUnits, PeakUnits, LastEventDate, ModifiedDate, ModifiedBy) =
+            db.ColumnRefs<UsageAggregate>(x => new {
+                x.WorkspaceId, x.UsagePeriodId, x.UsedUnits, x.ReservedUnits, x.PeakUnits, x.LastEventDate, x.ModifiedDate, x.ModifiedBy });
+        // PeakUnits is set before UsedUnits, as MySQL sets each column with the values of the columns before it
+        var updated = db.ExecuteSql(Sql.Fmt($@"UPDATE {UsageAggregate}
+SET {PeakUnits} = CASE WHEN {PeakUnits} > {UsedUnits} + {usedUnits} THEN {PeakUnits} ELSE {UsedUnits} + {usedUnits} END,
+    {ReservedUnits} = CASE WHEN {ReservedUnits} > {reservedUnits} THEN {ReservedUnits} - {reservedUnits} ELSE 0 END,
+    {UsedUnits} = {UsedUnits} + {usedUnits},
+    {LastEventDate} = CASE WHEN {usedUnits} > 0 THEN {now} ELSE {LastEventDate} END,
+    {ModifiedDate} = {now},
+    {ModifiedBy} = {userId}
+WHERE {UsagePeriodId} = {usagePeriodId}
+  AND {WorkspaceId} = {workspaceId}
+  AND {UsedUnits} + {ReservedUnits} - {reservedUnits} + {usedUnits} <= {limit}"));
+        return updated == 1;
     }
 
     public UsageSummary AdjustGauge(IDbConnection db, Workspace workspace, BillingSubscription subscription,
         string userId, string meterKey, long delta, string idempotencyKey, string source)
     {
-        var duplicate = db.Single<UsageEvent>(x => x.WorkspaceId == workspace.Id && x.IdempotencyKey == idempotencyKey);
+        db.AssertConfinedTo(workspace.Id);
+        using var _ = db.WithUserId(userId);
+        var duplicate = db.Single(SaasQueries.UsageEventByKey, idempotencyKey);
         var usage = GetUsage(db, workspace, subscription).FirstOrDefault(x => x.MeterKey == meterKey)
             ?? throw new HttpError(404, "MeterNotFound", $"Meter '{meterKey}' is not defined by the effective plan.");
         if (usage.Kind != MeterKind.Gauge)
             throw new HttpError(409, "GaugeRequired", $"Meter '{meterKey}' is not a gauge.");
-        var period = db.Single<UsagePeriod>(x => x.WorkspaceId == workspace.Id && x.MeterKey == meterKey && x.PeriodStart == usage.PeriodStart);
-        var aggregate = db.Single<UsageAggregate>(x => x.UsagePeriodId == period.Id);
+        var period = db.Single(SaasQueries.PeriodOfMeter, meterKey, usage.PeriodStart);
+        var aggregate = db.Single(SaasQueries.AggregateOfPeriod, period.Id);
         if (duplicate != null) return ToSummary(period, aggregate, usage.DisplayName);
         var next = aggregate.UsedUnits + delta;
         if (next < 0) throw new HttpError(409, "GaugeUnderflow", "The usage adjustment would make the gauge negative.");
         if (delta > 0 && usage.Allowance != null && usage.Enforcement == QuotaEnforcement.HardLimit && next + aggregate.ReservedUnits > usage.Allowance)
             throw new HttpError(429, "QuotaExceeded", $"This operation would exceed the {usage.DisplayName} allowance.");
         var now = DateTime.UtcNow;
-        using var tx = db.OpenTransaction();
-        db.Insert(new UsageEvent {
-            WorkspaceId = workspace.Id, UsagePeriodId = period.Id, MeterKey = meterKey, Units = delta,
-            IdempotencyKey = idempotencyKey, Source = source, EventType = "gauge-adjustment", RecordedDate = now, RecordedBy = userId,
+        db.RunInTransaction(() => {
+            db.Insert(new UsageEvent {
+                UsagePeriodId = period.Id, MeterKey = meterKey, Units = delta,
+                IdempotencyKey = idempotencyKey, Source = source, EventType = "gauge-adjustment", RecordedDate = now, RecordedBy = userId,
+            });
+            // Every value is sent as a db param, and the table and columns are quoted by the database's dialect.
+            // It's a complete SQL statement, which connection filters don't change, so it says which organization.
+            var UsageAggregate = db.TableRef<UsageAggregate>();
+            var (Id, WorkspaceId, UsedUnits, ReservedUnits, PeakUnits, LastEventDate, ModifiedDate, ModifiedBy) =
+                db.ColumnRefs<UsageAggregate>(x => new {
+                    x.Id, x.WorkspaceId, x.UsedUnits, x.ReservedUnits, x.PeakUnits, x.LastEventDate, x.ModifiedDate, x.ModifiedBy });
+            // Reducing a gauge isn't limited by its allowance
+            var limit = delta > 0 ? HardLimit(usage.Enforcement, usage.Allowance) : long.MaxValue;
+            var updated = db.ExecuteSql(Sql.Fmt($@"UPDATE {UsageAggregate}
+SET {PeakUnits} = CASE WHEN {PeakUnits} > {UsedUnits} + {delta} THEN {PeakUnits} ELSE {UsedUnits} + {delta} END,
+    {UsedUnits} = {UsedUnits} + {delta},
+    {LastEventDate} = {now},
+    {ModifiedDate} = {now},
+    {ModifiedBy} = {userId}
+WHERE {Id} = {aggregate.Id}
+  AND {WorkspaceId} = {workspace.Id}
+  AND {UsedUnits} + {delta} >= 0
+  AND {UsedUnits} + {ReservedUnits} + {delta} <= {limit}"));
+            if (updated != 1)
+                throw new HttpError(delta < 0 ? 409 : 429, delta < 0 ? "GaugeUnderflow" : "QuotaExceeded",
+                    delta < 0 ? "The usage adjustment would make the gauge negative." : $"This operation would exceed the {usage.DisplayName} allowance.");
+            aggregate = db.SingleById<UsageAggregate>(aggregate.Id);
         });
-        var dialect = db.GetDialectProvider();
-        var table = dialect.GetQuotedTableName(typeof(UsageAggregate));
-        string Col(string name) => dialect.GetQuotedColumnName(name);
-        var used = Col(nameof(UsageAggregate.UsedUnits));
-        var reserved = Col(nameof(UsageAggregate.ReservedUnits));
-        var peak = Col(nameof(UsageAggregate.PeakUnits));
-        var updated = db.ExecuteSql($@"UPDATE {table}
-SET {used} = {used} + @Delta,
-    {peak} = CASE WHEN {peak} > {used} + @Delta THEN {peak} ELSE {used} + @Delta END,
-    {Col(nameof(UsageAggregate.LastEventDate))} = @Now,
-    {Col(nameof(UsageAggregate.ModifiedDate))} = @Now,
-    {Col(nameof(UsageAggregate.ModifiedBy))} = @UserId
-WHERE {Col(nameof(UsageAggregate.Id))} = @Id
-  AND {used} + @Delta >= 0
-  AND (@HardLimit = 0 OR @Allowance IS NULL OR {used} + {reserved} + @Delta <= @Allowance)",
-            new { Delta = delta, Now = now, UserId = userId, aggregate.Id,
-                HardLimit = usage.Enforcement == QuotaEnforcement.HardLimit && delta > 0 ? 1 : 0, usage.Allowance });
-        if (updated != 1)
-            throw new HttpError(delta < 0 ? 409 : 429, delta < 0 ? "GaugeUnderflow" : "QuotaExceeded",
-                delta < 0 ? "The usage adjustment would make the gauge negative." : $"This operation would exceed the {usage.DisplayName} allowance.");
-        aggregate = db.SingleById<UsageAggregate>(aggregate.Id);
-        tx.Commit();
         return ToSummary(period, aggregate, usage.DisplayName);
     }
 
@@ -545,7 +587,8 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         plan.IsArchived = version.IsArchived ?? plan.IsArchived;
         plan.Audience = version.Audience ?? plan.Audience;
         var versionIds = new HashSet<string>(versions.Select(x => x.Id));
-        var activeSubscriptions = db.Select<BillingSubscription>(x => x.Status != SubscriptionStatus.Canceled)
+        // Plans are shared by every organization, so their subscribers are counted across organizations
+        var activeSubscriptions = db.AcrossWorkspaces().Select<BillingSubscription>(x => x.Status != SubscriptionStatus.Canceled)
             .LongCount(x => versionIds.Contains(x.PlanVersionId));
 
         return new SaasPlanDetails {
@@ -562,13 +605,14 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         };
     }
 
-    public SaasPlanDetails EnsurePlanDraftForStripeCatalog(IDbConnection db, string actorId, string planId)
+    public SaasPlanDetails EnsurePlanDraftForStripeCatalog(IDbConnection db, string userId, string planId)
     {
+        using var _ = db.WithUserId(userId);
         var details = GetPlanDetails(db, planId);
         if (details.HasDraft) return details;
         var plan = details.Plan;
         var version = details.Version;
-        return SavePlanDraft(db, actorId, new SaveSaasPlanDraft {
+        return SavePlanDraft(db, userId, new SaveSaasPlanDraft {
             PlanId = planId,
             Name = plan.Name,
             Description = plan.Description,
@@ -594,8 +638,9 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         });
     }
 
-    public SaasPlanDetails SavePlanDraft(IDbConnection db, string actorId, SaveSaasPlanDraft request)
+    public SaasPlanDetails SavePlanDraft(IDbConnection db, string userId, SaveSaasPlanDraft request)
     {
+        using var _ = db.WithUserId(userId);
         ValidatePlanDraft(request);
         var plan = db.SingleById<SaasPlan>(request.PlanId)
             ?? throw new HttpError(404, "PlanNotFound", "The selected plan was not found.");
@@ -611,8 +656,6 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
                 PlanId = plan.Id,
                 Version = versions.Count == 0 ? 1 : versions.Max(x => x.Version) + 1,
                 Status = PlanVersionStatus.Draft,
-                CreatedDate = now,
-                CreatedBy = actorId,
             };
             db.Insert(draft);
         }
@@ -627,8 +670,6 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         draft.EffectiveFrom = null;
         draft.PublishedDate = null;
         draft.PublishedBy = null;
-        draft.ModifiedDate = now;
-        draft.ModifiedBy = actorId;
         db.Update(draft);
 
         db.Delete<SaasPlanPrice>(x => x.PlanVersionId == draft.Id);
@@ -643,7 +684,6 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
                 UnitAmount = price.UnitAmount,
                 StripePriceId = NormalizeOptional(price.StripePriceId),
                 IsActive = price.IsActive,
-                CreatedDate = now, ModifiedDate = now, CreatedBy = actorId, ModifiedBy = actorId,
             });
         foreach (var feature in request.Features)
             db.Insert(new SaasPlanFeature {
@@ -653,7 +693,6 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
                 Description = NormalizeOptional(feature.Description),
                 Enabled = feature.Enabled,
                 DisplayOrder = feature.DisplayOrder,
-                CreatedDate = now, ModifiedDate = now, CreatedBy = actorId, ModifiedBy = actorId,
             });
         foreach (var quota in request.Quotas)
             db.Insert(new SaasPlanQuota {
@@ -663,10 +702,9 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
                 IncludedUnits = quota.IncludedUnits,
                 Enforcement = quota.Enforcement,
                 RolloverEnabled = quota.RolloverEnabled,
-                CreatedDate = now, ModifiedDate = now, CreatedBy = actorId, ModifiedBy = actorId,
             });
-        db.Insert(new SaasAuditEvent {
-            Category = "plan", Action = "draft.saved", ActorId = actorId, SubjectId = draft.Id,
+        db.Insert(new PlatformAuditEvent {
+            Category = "plan", Action = "draft.saved", UserId = userId, SubjectId = draft.Id,
             DetailJson = new { plan.Id, plan.Code, draft.Version }.ToJson(), CreatedDate = now,
         });
         tx.Commit();
@@ -674,8 +712,9 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         return GetPlanDetails(db, plan.Id);
     }
 
-    public SaasPlanDetails PublishPlanDraft(IDbConnection db, string actorId, string planId)
+    public SaasPlanDetails PublishPlanDraft(IDbConnection db, string userId, string planId)
     {
+        using var _ = db.WithUserId(userId);
         var plan = db.SingleById<SaasPlan>(planId)
             ?? throw new HttpError(404, "PlanNotFound", "The selected plan was not found.");
         var draft = db.Select<SaasPlanVersion>(x => x.PlanId == planId && x.Status == PlanVersionStatus.Draft)
@@ -696,25 +735,19 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         plan.IsContactSales = draft.IsContactSales ?? plan.IsContactSales;
         plan.IsArchived = draft.IsArchived ?? plan.IsArchived;
         plan.Audience = draft.Audience ?? plan.Audience;
-        plan.ModifiedDate = now;
-        plan.ModifiedBy = actorId;
         db.Update(plan);
         foreach (var published in db.Select<SaasPlanVersion>(x => x.PlanId == planId && x.Status == PlanVersionStatus.Published))
         {
             published.Status = PlanVersionStatus.Retired;
-            published.ModifiedDate = now;
-            published.ModifiedBy = actorId;
             db.Update(published);
         }
         draft.Status = PlanVersionStatus.Published;
         draft.EffectiveFrom = now;
         draft.PublishedDate = now;
-        draft.PublishedBy = actorId;
-        draft.ModifiedDate = now;
-        draft.ModifiedBy = actorId;
+        draft.PublishedBy = userId;
         db.Update(draft);
-        db.Insert(new SaasAuditEvent {
-            Category = "plan", Action = "version.published", ActorId = actorId, SubjectId = draft.Id,
+        db.Insert(new PlatformAuditEvent {
+            Category = "plan", Action = "version.published", UserId = userId, SubjectId = draft.Id,
             DetailJson = new { plan.Id, plan.Code, draft.Version }.ToJson(), CreatedDate = now,
         });
         tx.Commit();
@@ -722,9 +755,10 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         return GetPlanDetails(db, plan.Id);
     }
 
-    public SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string actorId, string planId,
+    public SaasPlanDetails SaveStripeCatalogProvisioning(IDbConnection db, string userId, string planId,
         ProvisionSaasPlanStripeCatalogResponse result)
     {
+        using var _ = db.WithUserId(userId);
         var draft = db.Select<SaasPlanVersion>(x => x.PlanId == planId && x.Status == PlanVersionStatus.Draft)
             .OrderByDescending(x => x.Version).FirstOrDefault()
             ?? throw new HttpError(409, "PlanDraftNotFound", "Save a draft before provisioning its Stripe catalog.");
@@ -744,12 +778,10 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
                 if (!price.StripePriceId.IsNullOrEmpty() && price.StripePriceId != mapping.StripePriceId)
                     throw new HttpError(409, "DraftPriceMappingChanged", "The draft price mapping changed while Stripe provisioning was running.");
                 price.StripePriceId = mapping.StripePriceId;
-                price.ModifiedDate = now;
-                price.ModifiedBy = actorId;
                 db.Update(price);
             }
-            db.Insert(new SaasAuditEvent {
-                Category = "stripe", Action = "catalog.provisioned", ActorId = actorId,
+            db.Insert(new PlatformAuditEvent {
+                Category = "stripe", Action = "catalog.provisioned", UserId = userId,
                 SubjectId = planId,
                 DetailJson = new { result.StripeProductId, result.Livemode, result.ProductCreated,
                     PricesCreated = result.Prices.Count(x => x.Created), PricesReused = result.Prices.Count(x => !x.Created) }.ToJson(),
@@ -810,37 +842,35 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
 
     private static string? NormalizeOptional(string? value) => value.IsNullOrEmpty() ? null : value!.Trim();
 
-    private UsagePeriod EnsureUsagePeriod(IDbConnection db, string workspaceId, BillingSubscription subscription,
+    private UsagePeriod EnsureUsagePeriod(IDbConnection db, BillingSubscription subscription,
         PlanQuotaInfo quota, long? allowance, string source)
     {
         var meter = config.Meters.LastOrDefault(x => x.Key.Equals(quota.MeterKey, StringComparison.OrdinalIgnoreCase));
         var kind = quota.MeterKey == "workspace.seats" ? MeterKind.Gauge : meter?.Kind ?? MeterKind.Counter;
         var reset = quota.MeterKey == "workspace.seats" ? MeterReset.Never : meter?.Reset ?? MeterReset.BillingPeriod;
         var now = DateTime.UtcNow;
-        var periodStart = reset switch {
-            MeterReset.Never => DateTime.UnixEpoch,
-            MeterReset.CalendarMonth => new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-            _ => AsUtc(subscription.PeriodStart),
-        };
-        var periodEnd = reset switch {
-            MeterReset.Never => DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc),
-            MeterReset.CalendarMonth => periodStart.AddMonths(1),
-            _ => AsUtc(subscription.PeriodEnd),
-        };
+        // When paid access is unavailable, e.g. after a subscription is canceled, its billing period no longer
+        // advances. The Free plan entitlements that apply are counted in calendar months, like the Free plan's.
+        var calendarMonth = reset == MeterReset.CalendarMonth ||
+            reset == MeterReset.BillingPeriod && subscription.AccessMode == WorkspaceAccessMode.FreeFallback;
+        var periodStart = reset == MeterReset.Never ? DateTime.UnixEpoch
+            : calendarMonth ? new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+            : AsUtc(subscription.PeriodStart);
+        var periodEnd = reset == MeterReset.Never ? DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc)
+            : calendarMonth ? periodStart.AddMonths(1)
+            : AsUtc(subscription.PeriodEnd);
         if (quota.RolloverEnabled && allowance != null)
         {
-            var previous = db.Select<UsagePeriod>(x => x.WorkspaceId == workspaceId && x.MeterKey == quota.MeterKey
-                    && x.PeriodStart < periodStart)
+            var previous = db.Select<UsagePeriod>(x => x.MeterKey == quota.MeterKey && x.PeriodStart < periodStart)
                 .OrderByDescending(x => x.PeriodStart).FirstOrDefault();
             if (previous != null)
             {
-                var previousUsage = db.Single<UsageAggregate>(x => x.UsagePeriodId == previous.Id);
+                var previousUsage = db.Single(SaasQueries.AggregateOfPeriod, previous.Id);
                 allowance += Math.Max(0, (previous.Allowance ?? 0) - previousUsage.UsedUnits - previousUsage.ReservedUnits);
                 source += "+rollover";
             }
         }
-        var existing = db.Single<UsagePeriod>(x => x.WorkspaceId == workspaceId && x.MeterKey == quota.MeterKey
-            && x.PeriodStart == periodStart);
+        var existing = db.Single(SaasQueries.PeriodOfMeter, quota.MeterKey, periodStart);
         if (existing != null)
         {
             if (existing.Allowance != allowance || existing.Enforcement != quota.Enforcement || existing.Source != source ||
@@ -852,22 +882,18 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
                 existing.Kind = kind;
                 existing.Reset = reset;
                 existing.PeriodEnd = periodEnd;
-                existing.ModifiedDate = DateTime.UtcNow;
-                existing.ModifiedBy = "entitlement-resolution";
-                db.Update(existing);
+                using (db.WithUserId("entitlement-resolution"))
+                    db.Update(existing);
             }
             return existing;
         }
         var period = new UsagePeriod {
-            WorkspaceId = workspaceId, MeterKey = quota.MeterKey, PeriodStart = periodStart,
+            MeterKey = quota.MeterKey, PeriodStart = periodStart,
             PeriodEnd = periodEnd, Allowance = allowance, Enforcement = quota.Enforcement, Source = source,
             Kind = kind, Reset = reset,
-            CreatedDate = now, ModifiedDate = now,
         };
         db.Insert(period);
-        db.Insert(new UsageAggregate {
-            UsagePeriodId = period.Id, CreatedDate = now, ModifiedDate = now,
-        });
+        db.Insert(new UsageAggregate { UsagePeriodId = period.Id });
         return period;
     }
 
@@ -884,10 +910,11 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         var now = DateTime.UtcNow;
         subscription.PeriodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         subscription.PeriodEnd = subscription.PeriodStart.AddMonths(1);
-        subscription.ModifiedDate = now;
         db.Update(subscription);
     }
 
+    // It's also run before a request is confined, and by jobs that work across organizations, so it says which
+    // organization its audit event is for
     private void ApplyLifecyclePolicy(IDbConnection db, Workspace workspace, BillingSubscription subscription)
     {
         var now = DateTime.UtcNow;
@@ -910,11 +937,10 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
             WorkspaceAccessMode.Suspended => "The organization is suspended by an operator.",
             _ => null,
         };
-        subscription.ModifiedDate = now;
-        subscription.ModifiedBy = "lifecycle-policy";
-        db.Update(subscription);
+        using (db.WithUserId("lifecycle-policy"))
+            db.Update(subscription);
         db.Insert(new SaasAuditEvent {
-            WorkspaceId=workspace.Id, Category="billing", Action="access-mode.changed", ActorId="lifecycle-policy",
+            WorkspaceId=workspace.Id, Category="billing", Action="access-mode.changed", UserId="lifecycle-policy",
             SubjectId=subscription.Id, DetailJson=new { previous, current=mode, subscription.Status }.ToJson(), CreatedDate=now,
         });
     }
@@ -948,12 +974,16 @@ WHERE {Col(nameof(UsageAggregate.Id))} = @Id
         };
     }
 
-    private static HttpError QuotaExceeded(IDbConnection db, Workspace workspace, string actorId,
+    // The most a meter's used and reserved units can total, which is only limited when its allowance is enforced
+    private static long HardLimit(QuotaEnforcement enforcement, long? allowance) =>
+        enforcement == QuotaEnforcement.HardLimit && allowance != null ? allowance.Value : long.MaxValue;
+
+    private static HttpError QuotaExceeded(IDbConnection db, string userId,
         UsageSummary usage, long requestedUnits, string operation)
     {
         db.Insert(new SaasAuditEvent {
-            WorkspaceId = workspace.Id, Category = "usage", Action = "quota.rejected", Outcome = "Rejected",
-            ActorId = actorId, SubjectId = usage.MeterKey, Reason = $"Hard limit rejected {operation}.",
+            Category = "usage", Action = "quota.rejected", Outcome = "Rejected",
+            UserId = userId, SubjectId = usage.MeterKey, Reason = $"Hard limit rejected {operation}.",
             DetailJson = new { usage.MeterKey, requestedUnits, usage.UsedUnits, usage.ReservedUnits, usage.Allowance }.ToJson(),
             CreatedDate = DateTime.UtcNow,
         });
@@ -976,7 +1006,6 @@ public class SaasServices(
     ProductConfig product,
     NotificationConfig notificationConfig,
     ISaasManager manager,
-    IWorkspaceContextResolver workspaceContexts,
     IEntitlementResolver entitlementResolver,
     IStripeBillingGateway stripe,
     IBackgroundJobs jobs) : Service
@@ -995,10 +1024,10 @@ public class SaasServices(
     public async Task<object> Any(GetSaasDashboard request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        var workspace = context.Workspace;
-        var member = context.Member;
-        var subscription = Db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        var scope = Db.GetWorkspaceScope();
+        var workspace = scope.Workspace;
+        var member = scope.Member;
+        var subscription = Db.GetSubscription();
         var usage = manager.GetUsage(Db, workspace, subscription);
         var planVersionId = subscription.PlanVersionId;
         if (subscription.AccessMode == WorkspaceAccessMode.FreeFallback)
@@ -1011,16 +1040,16 @@ public class SaasServices(
             Workspace = workspace, MemberRole = member.Role.ToString(), Subscription = subscription,
             Plan = manager.GetPlanInfo(Db, planVersionId), Usage = usage,
             Entitlements = entitlementResolver.GetEffective(Db, workspace, subscription),
-            UnreadNotifications = Db.Count<NotificationDelivery>(x => x.WorkspaceId == workspace.Id && x.UserId == session.UserAuthId && x.Channel == NotificationChannel.InApp && x.ReadDate == null),
+            UnreadNotifications = Db.Count<NotificationDelivery>(x => x.UserId == session.UserAuthId && x.Channel == NotificationChannel.InApp && x.ReadDate == null),
         };
     }
 
     public async Task<object> Any(GetWorkspaceApiKeys request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
+        var scope = Db.GetWorkspaceScope();
         var now = DateTime.UtcNow;
-        var results = Db.Select<ApiKeysFeature.ApiKey>(x => x.UserId == session.UserAuthId && x.RefIdStr == context.Workspace.Id)
+        var results = Db.Select<ApiKeysFeature.ApiKey>(x => x.UserId == session.UserAuthId)
             .OrderByDescending(x => x.Id)
             .Select(x => new WorkspaceApiKeyInfo {
                 Id = x.Id,
@@ -1036,45 +1065,49 @@ public class SaasServices(
 
     public async Task<object> Any(GetMyWorkspaces request)
     {
+        // An account-level API: it works on the organizations the user belongs to, before one is chosen
+        var db = Db.AcrossWorkspaces();
         AssertInteractiveRequest();
         var session = await GetSessionAsync();
-        var active = manager.EnsurePersonalWorkspace(Db, session.UserAuthId!, session.DisplayName, session.Email);
-        var memberships = Db.Select<WorkspaceMember>(x => x.UserId == session.UserAuthId && x.Status == WorkspaceMemberStatus.Active);
-        var workspaces = Db.SelectByIds<Workspace>(memberships.Select(x => x.WorkspaceId)).ToDictionary(x => x.Id);
+        var lastSwitchedTo = manager.EnsurePersonalWorkspace(db, session.UserAuthId!, session.DisplayName, session.Email);
+        var memberships = db.Select<WorkspaceMember>(x => x.UserId == session.UserAuthId && x.Status == WorkspaceMemberStatus.Active);
+        var workspaces = db.SelectByIds<Workspace>(memberships.Select(x => x.WorkspaceId)).ToDictionary(x => x.Id);
         return new GetMyWorkspacesResponse {
             Results = memberships.Where(x => workspaces.ContainsKey(x.WorkspaceId))
                 .OrderBy(x => workspaces[x.WorkspaceId].Name)
-                .Select(x => new WorkspaceAccessInfo { Workspace = workspaces[x.WorkspaceId], Role = x.Role, IsActive = x.WorkspaceId == active.Id })
+                .Select(x => new WorkspaceAccessInfo { Workspace = workspaces[x.WorkspaceId], Role = x.Role, IsActive = x.WorkspaceId == lastSwitchedTo.Id })
                 .ToList(),
         };
     }
 
     public async Task<object> Any(CreateOrganization request)
     {
+        // An account-level API: it works on the organizations the user belongs to, before one is chosen
+        var db = Db.AcrossWorkspaces();
         AssertInteractiveRequest();
         var session = await GetSessionAsync();
-        var workspace = manager.CreateOrganization(Db, session.UserAuthId!, request.Name, request.BillingEmail ?? session.Email);
+        var workspace = manager.CreateOrganization(db, session.UserAuthId!, request.Name, request.BillingEmail ?? session.Email);
         return new WorkspaceAccessInfo { Workspace = workspace, Role = WorkspaceMemberRole.Owner, IsActive = true };
     }
 
     public async Task<object> Any(SwitchWorkspace request)
     {
+        // An account-level API: it works on the organizations the user belongs to, before one is chosen
+        var db = Db.AcrossWorkspaces();
         AssertInteractiveRequest();
         var session = await GetSessionAsync();
-        manager.EnsurePersonalWorkspace(Db, session.UserAuthId!, session.DisplayName, session.Email);
-        var membership = Db.Single<WorkspaceMember>(x => x.WorkspaceId == request.WorkspaceId &&
+        manager.EnsurePersonalWorkspace(db, session.UserAuthId!, session.DisplayName, session.Email);
+        var membership = db.Single<WorkspaceMember>(x => x.WorkspaceId == request.WorkspaceId &&
             x.UserId == session.UserAuthId && x.Status == WorkspaceMemberStatus.Active)
             ?? throw new HttpError(403, "WorkspaceAccessDenied", "You do not have access to this organization.");
         var now = DateTime.UtcNow;
-        var preference = Db.SingleById<UserWorkspacePreference>(session.UserAuthId!)
-            ?? new UserWorkspacePreference { UserId = session.UserAuthId!, CreatedDate = now, CreatedBy = session.UserAuthId! };
+        var preference = db.SingleById<UserWorkspacePreference>(session.UserAuthId!)
+            ?? new UserWorkspacePreference { UserId = session.UserAuthId! };
         preference.ActiveWorkspaceId = membership.WorkspaceId;
-        preference.ModifiedDate = now;
-        preference.ModifiedBy = session.UserAuthId!;
-        Db.Save(preference);
-        Db.Insert(new SaasAuditEvent {
+        db.Save(preference);
+        db.Insert(new SaasAuditEvent {
             WorkspaceId = membership.WorkspaceId, Category = "workspace", Action = "workspace.selected",
-            ActorId = session.UserAuthId!, SubjectId = membership.WorkspaceId, CreatedDate = now,
+            UserId = session.UserAuthId!, SubjectId = membership.WorkspaceId, CreatedDate = now,
         });
         return new EmptyResponse();
     }
@@ -1082,8 +1115,8 @@ public class SaasServices(
     public async Task<object> Any(RecordUsage request)
     {
         var session = await GetSessionAsync();
-        var workspace = workspaceContexts.Resolve(Db, session, Request).Workspace;
-        var subscription = Db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        var workspace = Db.GetWorkspaceScope().Workspace;
+        var subscription = Db.GetSubscription();
         if (!entitlementResolver.HasFeature(Db, workspace, subscription, "api.access"))
             throw new HttpError(403, "FeatureNotEntitled", "API access is not included in the current plan.");
         var result = manager.RecordUsage(Db, workspace, subscription, session.UserAuthId!, request);
@@ -1102,27 +1135,25 @@ public class SaasServices(
     public async Task<object> Any(UpdateWorkspaceProfile request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        var workspace = context.Workspace;
-        AssertWorkspaceAdmin(context);
+        var scope = Db.GetWorkspaceScope();
+        var workspace = scope.Workspace;
+        AssertWorkspaceAdmin(scope);
         var normalizedSlug = new string(request.Slug.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
-        if (Db.Exists<Workspace>(x => x.Slug == normalizedSlug && x.Id != workspace.Id))
+        // Organization addresses are unique across organizations
+        if (Db.AcrossWorkspaces().Exists<Workspace>(x => x.Slug == normalizedSlug && x.Id != workspace.Id))
             throw new HttpError(409, "SlugAlreadyExists", "That organization address is already in use.");
         workspace.Name = request.Name.Trim();
         workspace.Slug = normalizedSlug;
         workspace.BillingEmail = request.BillingEmail?.Trim();
-        workspace.ModifiedDate = DateTime.UtcNow;
-        workspace.ModifiedBy = session.UserAuthId!;
         Db.Update(workspace);
-        Db.Insert(new SaasAuditEvent { WorkspaceId = workspace.Id, Category = "workspace", Action = "profile.updated", ActorId = session.UserAuthId!, SubjectId = workspace.Id, CreatedDate = DateTime.UtcNow });
+        Db.Insert(new SaasAuditEvent { Category = "workspace", Action = "profile.updated", UserId = session.UserAuthId!, SubjectId = workspace.Id, CreatedDate = DateTime.UtcNow });
         return workspace;
     }
 
     public async Task<object> Any(GetWorkspaceMembers request)
     {
-        var session = await GetSessionAsync();
-        var workspace = workspaceContexts.Resolve(Db, session, Request).Workspace;
-        var members = Db.Select<WorkspaceMember>(x => x.WorkspaceId == workspace.Id);
+        var workspace = Db.GetWorkspaceScope().Workspace;
+        var members = Db.Select<WorkspaceMember>();
         var users = Db.SelectByIds<User>(members.Where(x => !x.UserId.StartsWith("invite:"))
                 .Select(x => x.UserId))
             .ToDictionary(x => x.Id);
@@ -1147,30 +1178,28 @@ public class SaasServices(
     public async Task<object> Any(InviteWorkspaceMember request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        var workspace = context.Workspace;
-        AssertWorkspaceAdmin(context);
+        var scope = Db.GetWorkspaceScope();
+        var workspace = scope.Workspace;
+        AssertWorkspaceAdmin(scope);
         if (workspace.Kind == WorkspaceKind.Individual)
             throw new HttpError(409, "IndividualAccountHasNoTeam", "Individual accounts cannot invite team members. Create a business organization instead.");
         if (request.Role == WorkspaceMemberRole.Owner)
             throw new HttpError(409, "OwnershipTransferRequired", "Invite the member first, then use the ownership transfer workflow.");
         var email = request.Email.Trim().ToLowerInvariant();
-        var existing = Db.Single<WorkspaceMember>(x => x.WorkspaceId == workspace.Id && x.InvitedEmail == email);
+        var existing = Db.Single<WorkspaceMember>(x => x.InvitedEmail == email);
         if (existing != null && existing.Status != WorkspaceMemberStatus.Disabled)
             throw new HttpError(409, "MemberAlreadyInvited", "This email already belongs to the organization.");
-        var subscription = Db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        var subscription = Db.GetSubscription();
         var seats = manager.GetUsage(Db, workspace, subscription).FirstOrDefault(x => x.MeterKey == "workspace.seats")?.Allowance;
         var now = DateTime.UtcNow;
-        var memberCount = Db.Count<WorkspaceMember>(x => x.WorkspaceId == workspace.Id &&
-            (x.Status == WorkspaceMemberStatus.Active ||
-             (x.Status == WorkspaceMemberStatus.Invited && (x.InvitationExpiresAt == null || x.InvitationExpiresAt > now))));
+        var memberCount = Db.Count<WorkspaceMember>(x => x.Status == WorkspaceMemberStatus.Active ||
+            (x.Status == WorkspaceMemberStatus.Invited && (x.InvitationExpiresAt == null || x.InvitationExpiresAt > now)));
         if (seats != null && memberCount >= seats)
             throw new HttpError(429, "SeatQuotaExceeded", "Upgrade the organization plan before inviting another member.");
         var sendEmail = notificationConfig.Provider == EmailProvider.Smtp && TryResolve<SmtpConfig>() != null;
         var token = WorkspaceInvitationTokens.Create();
         var member = existing ?? new WorkspaceMember {
-            WorkspaceId=workspace.Id, UserId=$"invite:{email}", InvitedEmail=email,
-            CreatedDate=now, CreatedBy=session.UserAuthId!,
+            UserId=$"invite:{email}", InvitedEmail=email,
         };
         member.Role = request.Role;
         member.Status = WorkspaceMemberStatus.Invited;
@@ -1181,10 +1210,8 @@ public class SaasServices(
         member.InvitationAcceptedDate = null;
         member.InvitationRevokedDate = null;
         member.JoinedDate = null;
-        member.ModifiedDate = now;
-        member.ModifiedBy = session.UserAuthId!;
         Db.Save(member);
-        Db.Insert(new SaasAuditEvent { WorkspaceId=workspace.Id, Category="membership", Action="member.invited", ActorId=session.UserAuthId!, SubjectId=member.Id, DetailJson=new { email, role=request.Role }.ToJson(), CreatedDate=now });
+        Db.Insert(new SaasAuditEvent { Category="membership", Action="member.invited", UserId=session.UserAuthId!, SubjectId=member.Id, DetailJson=new { email, role=request.Role }.ToJson(), CreatedDate=now });
         var invitationUrl = BuildInvitationUrl(token);
         if (sendEmail)
             QueueInvitationEmail(workspace, member, invitationUrl);
@@ -1194,9 +1221,9 @@ public class SaasServices(
     public async Task<object> Any(ResendWorkspaceInvitation request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        AssertWorkspaceAdmin(context);
-        var member = Db.Single<WorkspaceMember>(x => x.Id == request.Id && x.WorkspaceId == context.Workspace.Id)
+        var scope = Db.GetWorkspaceScope();
+        AssertWorkspaceAdmin(scope);
+        var member = Db.SingleById<WorkspaceMember>(request.Id)
             ?? throw new HttpError(404, "InvitationNotFound", "The organization invitation was not found.");
         if (member.Status != WorkspaceMemberStatus.Invited || member.InvitedEmail.IsNullOrEmpty())
             throw new HttpError(409, "InvitationNotPending", "Only pending invitations can be resent.");
@@ -1208,27 +1235,27 @@ public class SaasServices(
         member.InvitationSentDate = sendEmail ? now : null;
         member.InvitationTokenHash = WorkspaceInvitationTokens.Hash(token);
         member.InvitationExpiresAt = now.AddDays(Math.Max(1, config.InvitationExpiryDays));
-        member.ModifiedDate = now;
-        member.ModifiedBy = session.UserAuthId!;
         Db.Update(member);
         var invitationUrl = BuildInvitationUrl(token);
         if (sendEmail)
-            QueueInvitationEmail(context.Workspace, member, invitationUrl);
+            QueueInvitationEmail(scope.Workspace, member, invitationUrl);
         Db.Insert(new SaasAuditEvent {
-            WorkspaceId=context.Workspace.Id, Category="membership", Action="invitation.resent",
-            ActorId=session.UserAuthId!, SubjectId=member.Id, CreatedDate=now,
+            Category="membership", Action="invitation.resent",
+            UserId=session.UserAuthId!, SubjectId=member.Id, CreatedDate=now,
         });
         return ToMemberInfo(member, invitationUrl);
     }
 
     public async Task<object> Any(AcceptWorkspaceInvitation request)
     {
+        // An account-level API: it works on the organizations the user belongs to, before one is chosen
+        var db = Db.AcrossWorkspaces();
         AssertInteractiveRequest();
         var session = await GetSessionAsync();
         var tokenHash = WorkspaceInvitationTokens.Hash(request.Token.Trim());
-        var member = Db.Single<WorkspaceMember>(x => x.InvitationTokenHash == tokenHash)
+        var member = db.Single<WorkspaceMember>(x => x.InvitationTokenHash == tokenHash)
             ?? throw new HttpError(404, "InvitationNotFound", "This invitation is invalid or has already been used.");
-        var invitedWorkspace = Db.SingleById<Workspace>(member.WorkspaceId)
+        var invitedWorkspace = db.SingleById<Workspace>(member.WorkspaceId)
             ?? throw new HttpError(404, "WorkspaceNotFound", "The invited organization was not found.");
         if (invitedWorkspace.Kind == WorkspaceKind.Individual)
             throw new HttpError(409, "IndividualAccountHasNoTeam", "Individual accounts cannot accept team members.");
@@ -1236,18 +1263,16 @@ public class SaasServices(
         var sessionEmail = (session.Email ?? session.UserName)?.Trim().ToLowerInvariant();
         WorkspaceInvitationTokens.AssertCanAccept(member, sessionEmail, now);
 
-        var existing = Db.Single<WorkspaceMember>(x => x.WorkspaceId == member.WorkspaceId && x.UserId == session.UserAuthId);
+        var existing = db.Single<WorkspaceMember>(x => x.WorkspaceId == member.WorkspaceId && x.UserId == session.UserAuthId);
         if (existing != null && existing.Id != member.Id)
         {
             if (existing.Status != WorkspaceMemberStatus.Active)
             {
                 existing.Status = WorkspaceMemberStatus.Active;
                 existing.JoinedDate = now;
-                existing.ModifiedDate = now;
-                existing.ModifiedBy = session.UserAuthId!;
-                Db.Update(existing);
+                db.Update(existing);
             }
-            Db.DeleteById<WorkspaceMember>(member.Id);
+            db.DeleteById<WorkspaceMember>(member.Id);
             member = existing;
         }
         else
@@ -1257,16 +1282,14 @@ public class SaasServices(
             member.InvitationAcceptedDate = now;
             member.InvitationTokenHash = null;
             member.JoinedDate = now;
-            member.ModifiedDate = now;
-            member.ModifiedBy = session.UserAuthId!;
-            Db.Update(member);
+            db.Update(member);
         }
-        SaveActiveWorkspacePreference(session.UserAuthId!, member.WorkspaceId, now);
-        Db.Insert(new SaasAuditEvent {
+        SaveActiveWorkspacePreference(session.UserAuthId!, member.WorkspaceId);
+        db.Insert(new SaasAuditEvent {
             WorkspaceId=member.WorkspaceId, Category="membership", Action="invitation.accepted",
-            ActorId=session.UserAuthId!, SubjectId=member.Id, CreatedDate=now,
+            UserId=session.UserAuthId!, SubjectId=member.Id, CreatedDate=now,
         });
-        var workspace = Db.SingleById<Workspace>(member.WorkspaceId)
+        var workspace = db.SingleById<Workspace>(member.WorkspaceId)
             ?? throw new HttpError(404, "WorkspaceNotFound", "The invited organization was not found.");
         return new WorkspaceAccessInfo { Workspace=workspace, Role=member.Role, IsActive=true };
     }
@@ -1274,20 +1297,18 @@ public class SaasServices(
     public async Task<object> Any(UpdateWorkspaceMemberRole request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        var workspace = context.Workspace;
-        AssertWorkspaceAdmin(context);
-        var member = Db.Single<WorkspaceMember>(x => x.Id == request.Id && x.WorkspaceId == workspace.Id)
+        var scope = Db.GetWorkspaceScope();
+        var workspace = scope.Workspace;
+        AssertWorkspaceAdmin(scope);
+        var member = Db.SingleById<WorkspaceMember>(request.Id)
             ?? throw new HttpError(404, "WorkspaceMemberNotFound", "The organization member was not found.");
         if (member.Role == WorkspaceMemberRole.Owner || request.Role == WorkspaceMemberRole.Owner)
             throw new HttpError(409, "OwnershipTransferRequired", "Use the ownership transfer workflow to change the Owner role.");
         var previous = member.Role;
         member.Role = request.Role;
-        member.ModifiedDate = DateTime.UtcNow;
-        member.ModifiedBy = session.UserAuthId!;
         Db.Update(member);
         Db.Insert(new SaasAuditEvent {
-            WorkspaceId=workspace.Id, Category="membership", Action="member.role-changed", ActorId=session.UserAuthId!,
+            Category="membership", Action="member.role-changed", UserId=session.UserAuthId!,
             SubjectId=member.Id, DetailJson=new { previous, current=request.Role }.ToJson(), CreatedDate=DateTime.UtcNow,
         });
         return new WorkspaceMemberInfo { Id=member.Id, UserId=member.UserId, Email=member.InvitedEmail, Role=member.Role, Status=member.Status, JoinedDate=member.JoinedDate };
@@ -1296,10 +1317,10 @@ public class SaasServices(
     public async Task<object> Any(RemoveWorkspaceMember request)
     {
         var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        var workspace = context.Workspace;
-        AssertWorkspaceAdmin(context);
-        var member = Db.Single<WorkspaceMember>(x => x.Id == request.Id && x.WorkspaceId == workspace.Id)
+        var scope = Db.GetWorkspaceScope();
+        var workspace = scope.Workspace;
+        AssertWorkspaceAdmin(scope);
+        var member = Db.SingleById<WorkspaceMember>(request.Id)
             ?? throw new HttpError(404, "WorkspaceMemberNotFound", "The organization member was not found.");
         if (member.Role == WorkspaceMemberRole.Owner)
             throw new HttpError(409, "OwnershipTransferRequired", "Transfer ownership before removing the organization Owner.");
@@ -1310,11 +1331,9 @@ public class SaasServices(
         member.Status = WorkspaceMemberStatus.Disabled;
         member.InvitationRevokedDate = wasInvitation ? now : member.InvitationRevokedDate;
         member.InvitationTokenHash = null;
-        member.ModifiedDate = now;
-        member.ModifiedBy = session.UserAuthId!;
         Db.Update(member);
         Db.Insert(new SaasAuditEvent {
-            WorkspaceId=workspace.Id, Category="membership", Action=wasInvitation ? "invitation.revoked" : "member.removed", ActorId=session.UserAuthId!,
+            Category="membership", Action=wasInvitation ? "invitation.revoked" : "member.removed", UserId=session.UserAuthId!,
             SubjectId=member.Id, CreatedDate=now,
         });
         return new EmptyResponse();
@@ -1322,10 +1341,9 @@ public class SaasServices(
 
     public async Task<object> Any(CreateCheckoutSession request)
     {
-        var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        AssertCanManageBilling(context);
-        var workspace = context.Workspace;
+        var scope = Db.GetWorkspaceScope();
+        AssertCanManageBilling(scope);
+        var workspace = scope.Workspace;
         var price = Db.SingleById<SaasPlanPrice>(request.PriceId)
             ?? throw new HttpError(404, "PriceNotFound", "The selected price was not found.");
         var version = Db.SingleById<SaasPlanVersion>(price.PlanVersionId)
@@ -1346,12 +1364,11 @@ public class SaasServices(
 
     public async Task<object> Any(ConfirmCheckoutSession request)
     {
-        var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        AssertCanManageBilling(context);
-        var workspace = context.Workspace;
+        var scope = Db.GetWorkspaceScope();
+        AssertCanManageBilling(scope);
+        var workspace = scope.Workspace;
         var confirmed = await stripe.ConfirmCheckoutAsync(Db, workspace, request.SessionId);
-        var subscription = Db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        var subscription = Db.GetSubscription();
         if (confirmed)
             manager.EvaluateAccess(Db, workspace, subscription);
         return new ConfirmCheckoutSessionResponse {
@@ -1362,10 +1379,9 @@ public class SaasServices(
 
     public async Task<object> Any(CreateCustomerPortalSession request)
     {
-        var session = await GetSessionAsync();
-        var context = workspaceContexts.Resolve(Db, session, Request);
-        AssertCanManageBilling(context);
-        var workspace = context.Workspace;
+        var scope = Db.GetWorkspaceScope();
+        AssertCanManageBilling(scope);
+        var workspace = scope.Workspace;
         var url = await stripe.CreatePortalAsync(workspace, Request.GetBaseUrl().CombineWith("/billing"));
         return new CreateBillingSessionResponse { Url = url };
     }
@@ -1395,8 +1411,8 @@ public class SaasServices(
         Plans = Db.Select<SaasPlan>().OrderBy(x => x.DisplayOrder).ToList(),
         Versions = Db.Select<SaasPlanVersion>().OrderByDescending(x => x.CreatedDate).ToList(),
         Prices = Db.Select<SaasPlanPrice>(), Features = Db.Select<SaasPlanFeature>(), Quotas = Db.Select<SaasPlanQuota>(),
-        Workspaces = Db.Select<Workspace>().OrderByDescending(x => x.CreatedDate).Take(100).ToList(),
-        RecentStripeEvents = Db.Select<StripeEventInbox>().OrderByDescending(x => x.ReceivedDate).Take(100).ToList(),
+        Workspaces = Db.AcrossWorkspaces().Select(Db.AcrossWorkspaces().From<Workspace>().OrderByDescending(x => x.CreatedDate).Limit(100)),
+        RecentStripeEvents = Db.Select(Db.From<StripeEventInbox>().OrderByDescending(x => x.ReceivedDate).Limit(100)),
     };
 
     public object Any(GetSaasPlanDetails request) => manager.GetPlanDetails(Db, request.PlanId);
@@ -1411,8 +1427,8 @@ public class SaasServices(
         ValidateCoupon(request);
         var session = await GetSessionAsync();
         var result = await stripe.CreateCouponAsync(request);
-        Db.Insert(new SaasAuditEvent {
-            Category = "coupon", Action = "coupon.created", ActorId = session.UserAuthId!,
+        Db.Insert(new PlatformAuditEvent {
+            Category = "coupon", Action = "coupon.created", UserId = session.UserAuthId!,
             SubjectId = result.PromotionCodeId,
             DetailJson = new { result.Code, result.CouponId, result.PercentOff, result.AmountOff, result.Currency }.ToJson(),
             CreatedDate = DateTime.UtcNow,
@@ -1424,8 +1440,8 @@ public class SaasServices(
     {
         var session = await GetSessionAsync();
         var result = await stripe.DeactivateCouponAsync(request.PromotionCodeId);
-        Db.Insert(new SaasAuditEvent {
-            Category = "coupon", Action = "coupon.deactivated", ActorId = session.UserAuthId!,
+        Db.Insert(new PlatformAuditEvent {
+            Category = "coupon", Action = "coupon.deactivated", UserId = session.UserAuthId!,
             SubjectId = result.PromotionCodeId, DetailJson = new { result.Code, result.CouponId }.ToJson(),
             CreatedDate = DateTime.UtcNow,
         });
@@ -1478,6 +1494,8 @@ public class SaasServices(
     {
         var session = await GetSessionAsync();
         request.Key = request.Key.Trim();
+        // A platform API that works on one customer, so the request is confined to that organization
+        Db.ForWorkspace(request.WorkspaceId);
         if (!Db.Exists<Workspace>(x => x.Id == request.WorkspaceId))
             throw new HttpError(404, "WorkspaceNotFound", "The organization was not found.");
         if ((request.Enabled != null) == (request.QuotaUnits != null))
@@ -1493,27 +1511,30 @@ public class SaasServices(
             throw new HttpError(400, "InvalidOverrideExpiry", "Override expiry must be in the future.");
         var now = DateTime.UtcNow;
         var row = request.Id.IsNullOrEmpty()
-            ? Db.Single<CustomerEntitlementOverride>(x => x.WorkspaceId == request.WorkspaceId && x.Key == request.Key)
-                ?? new CustomerEntitlementOverride { CreatedDate = now, CreatedBy = session.UserAuthId! }
+            ? Db.Single<CustomerEntitlementOverride>(x => x.Key == request.Key)
+                ?? new CustomerEntitlementOverride()
             : Db.SingleById<CustomerEntitlementOverride>(request.Id) ?? throw new HttpError(404, "OverrideNotFound", "Override not found.");
+        // A new override keeps the id it was created with, which the request doesn't have
+        var id = row.Id;
         row.PopulateWith(request);
-        row.ModifiedDate = now;
-        row.ModifiedBy = session.UserAuthId!;
+        row.Id = id;
         Db.Save(row);
-        Db.Insert(new SaasAuditEvent { WorkspaceId = row.WorkspaceId, Category = "entitlement", Action = "override.saved", ActorId = session.UserAuthId!, SubjectId = row.Id, DetailJson = row.ToJson(), CreatedDate = now });
+        Db.Insert(new SaasAuditEvent { Category = "entitlement", Action = "override.saved", UserId = session.UserAuthId!, SubjectId = row.Id, DetailJson = row.ToJson(), CreatedDate = now });
         return row;
     }
 
     public async Task<object> Any(DeleteCustomerOverride request)
     {
+        // A platform API that finds the override by its id, in any organization
+        var db = Db.AcrossWorkspaces();
         var session = await GetSessionAsync();
-        var row = Db.SingleById<CustomerEntitlementOverride>(request.Id)
+        var row = db.SingleById<CustomerEntitlementOverride>(request.Id)
             ?? throw new HttpError(404, "OverrideNotFound", "Override not found.");
-        using var tx = Db.OpenTransaction();
-        Db.DeleteById<CustomerEntitlementOverride>(row.Id);
-        Db.Insert(new SaasAuditEvent {
+        using var tx = db.OpenTransaction();
+        db.DeleteById<CustomerEntitlementOverride>(row.Id);
+        db.Insert(new SaasAuditEvent {
             WorkspaceId = row.WorkspaceId, Category = "entitlement", Action = "override.deleted",
-            ActorId = session.UserAuthId!, SubjectId = row.Id,
+            UserId = session.UserAuthId!, SubjectId = row.Id,
             DetailJson = new { row.Key, row.Enabled, row.QuotaUnits }.ToJson(), CreatedDate = DateTime.UtcNow,
         });
         tx.Commit();
@@ -1545,25 +1566,23 @@ public class SaasServices(
             JoinedDate=member.JoinedDate,
         };
 
-    private void SaveActiveWorkspacePreference(string userId, string workspaceId, DateTime now)
+    private void SaveActiveWorkspacePreference(string userId, string workspaceId)
     {
         var preference = Db.SingleById<UserWorkspacePreference>(userId)
-            ?? new UserWorkspacePreference { UserId=userId, CreatedDate=now, CreatedBy=userId };
+            ?? new UserWorkspacePreference { UserId=userId };
         preference.ActiveWorkspaceId = workspaceId;
-        preference.ModifiedDate = now;
-        preference.ModifiedBy = userId;
         Db.Save(preference);
     }
 
-    private static void AssertWorkspaceAdmin(WorkspaceContext context)
-        => WorkspaceAuthorization.RequireAdmin(context);
+    private static void AssertWorkspaceAdmin(WorkspaceScope scope)
+        => WorkspaceAuthorization.RequireAdmin(scope);
 
-    private static void AssertCanManageBilling(WorkspaceContext context)
-        => WorkspaceAuthorization.RequireBilling(context);
+    private static void AssertCanManageBilling(WorkspaceScope scope)
+        => WorkspaceAuthorization.RequireBilling(scope);
 
     private void AssertInteractiveRequest()
     {
-        if (WorkspaceContextResolver.IsApiKeyRequest(Request))
+        if (SaasApiKeys.IsApiKeyRequest(Request))
             throw new HttpError(403, "InteractiveSessionRequired", "API keys cannot list or change the signed-in user's active organization.");
     }
 
@@ -1605,7 +1624,7 @@ public class ProcessStripeEventCommand(
 {
     protected override async Task RunAsync(ProcessStripeEvent request, CancellationToken token)
     {
-        using var db = dbFactory.Open();
+        using var db = dbFactory.OpenAcrossWorkspaces("stripe");
         var inbox = db.SingleById<StripeEventInbox>(request.InboxId);
         if (inbox == null || inbox.Status == StripeInboxStatus.Completed) return;
         try
@@ -1613,16 +1632,18 @@ public class ProcessStripeEventCommand(
             inbox.Status = StripeInboxStatus.Processing;
             inbox.Attempts++;
             db.Update(inbox);
-            await stripe.ApplyWebhookAsync(db, inbox, token);
-            var audit = db.Single<SaasAuditEvent>(x => x.SubjectId == inbox.StripeEventId && x.Category == "billing");
-            if (audit?.WorkspaceId != null)
+            // The organization the event is for is found across organizations, then updated on a connection
+            // confined to it
+            var workspace = stripe.FindWebhookWorkspace(db, inbox);
+            if (workspace != null)
             {
-                var workspace = db.SingleById<Workspace>(audit.WorkspaceId);
-                var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
-                manager.EvaluateAccess(db, workspace, subscription);
-                var owner = db.Single<WorkspaceMember>(x => x.WorkspaceId == workspace.Id && x.Role == WorkspaceMemberRole.Owner && x.Status == WorkspaceMemberStatus.Active);
+                using var workspaceDb = dbFactory.OpenForWorkspace(workspace.Id, "stripe");
+                await stripe.ApplyWebhookAsync(workspaceDb, workspace, inbox, token);
+                var subscription = workspaceDb.GetSubscription();
+                manager.EvaluateAccess(workspaceDb, workspace, subscription);
+                var owner = workspaceDb.Single<WorkspaceMember>(x => x.Role == WorkspaceMemberRole.Owner && x.Status == WorkspaceMemberStatus.Active);
                 if (owner != null && inbox.EventType is "invoice.payment_failed" or "invoice.paid" or "customer.subscription.updated" or "customer.subscription.deleted")
-                    notifications.Queue(db, workspace.Id, owner.UserId, workspace.BillingEmail ?? "", "billing.changed",
+                    notifications.Queue(workspaceDb, workspace.Id, owner.UserId, workspace.BillingEmail ?? "", "billing.changed",
                         $"Billing status changed for {workspace.Name}",
                         $"The subscription is now {subscription.Status}. Open billing settings to review the current access policy.",
                         $"stripe:{inbox.StripeEventId}");

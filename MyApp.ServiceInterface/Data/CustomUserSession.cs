@@ -36,6 +36,10 @@ public class AdditionalUserClaimsPrincipalFactory(
             claims.Add(new Claim(JwtClaimTypes.Picture, user.ProfileUrl));
         }
 
+        // Signed-in users can call every API that needs a scope, which [ValidateHasScope] checks.
+        // An API key only has the scopes it was created with.
+        claims.AddRange(MyApp.ServiceInterface.SaasApiKeys.Scopes.Select(scope => new Claim(JwtClaimTypes.Scope, scope)));
+
         identity.AddClaims(claims);
         return principal;
     }

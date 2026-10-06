@@ -23,7 +23,7 @@ public class HealthChecks : IHostingStartup
             try
             {
                 using var db = dbFactory.Open();
-                db.SqlScalar<long>("SELECT 1");
+                db.SqlScalar<long>(Sql.Fmt($"SELECT 1"));
                 if (!db.TableExists<ServiceModel.Workspace>() || !db.TableExists<ServiceModel.SaasPlan>())
                     return Task.FromResult(HealthCheckResult.Unhealthy("The application database schema is incomplete."));
                 return Task.FromResult(HealthCheckResult.Healthy());

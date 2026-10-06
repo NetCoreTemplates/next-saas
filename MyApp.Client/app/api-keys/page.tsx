@@ -6,7 +6,7 @@ import AppShell, { PageHeading, Panel, StatusPill } from '@/components/app-shell
 import { ValidateAuth } from '@/lib/auth'
 import FeatureGate from '@/components/feature-gate'
 import { GetWorkspaceApiKeys, WorkspaceApiKeyInfo } from '@/lib/dtos'
-import { client } from '@/lib/gateway'
+import { client, tabWorkspaceId } from '@/lib/gateway'
 import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
 
 function formatDate(value?: string) {
@@ -23,7 +23,7 @@ function ApiKeysPage() {
   useEffect(() => {
     if (loaded.current) return
     loaded.current = true
-    void client.api(new GetWorkspaceApiKeys()).then(api => {
+    void client.api(new GetWorkspaceApiKeys({ workspaceId: tabWorkspaceId() })).then(api => {
       if (api.succeeded) setKeys(api.response?.results ?? [])
       else setKeysError(api.error?.message || 'Unable to load API keys.')
       setKeysLoading(false)
@@ -47,7 +47,7 @@ function ApiKeysPage() {
       eyebrow="Developer access"
       title="API keys"
       description="Create revocable credentials for services and automations. Raw keys are shown once and never stored in reversible application fields."
-      action={<a href="/Identity/Account/Manage/ApiKeys" className="inline-flex items-center gap-2 rounded-[10px] bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white"><KeyRound className="h-4 w-4" />Manage API keys</a>}
+      action={<a href={`/Identity/Account/Manage/ApiKeys?workspaceId=${encodeURIComponent(tabWorkspaceId())}`} className="inline-flex items-center gap-2 rounded-[10px] bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white"><KeyRound className="h-4 w-4" />Manage API keys</a>}
     />
     <FeatureGate feature="api.access" entitlements={data?.entitlements} title="API access is not included in this plan">
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
@@ -72,9 +72,9 @@ function ApiKeysPage() {
                     </tr>)}
                   </tbody>
                 </table>
-                <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-6 py-3.5 text-xs text-slate-500 dark:border-white/[.06] dark:bg-white/[.02] dark:text-slate-400"><span>{keys.length} credential{keys.length === 1 ? '' : 's'}</span><a href="/Identity/Account/Manage/ApiKeys" className="font-semibold text-[#0b5cff] dark:text-blue-300">Create or revoke keys →</a></div>
+                <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-6 py-3.5 text-xs text-slate-500 dark:border-white/[.06] dark:bg-white/[.02] dark:text-slate-400"><span>{keys.length} credential{keys.length === 1 ? '' : 's'}</span><a href={`/Identity/Account/Manage/ApiKeys?workspaceId=${encodeURIComponent(tabWorkspaceId())}`} className="font-semibold text-[#0b5cff] dark:text-blue-300">Create or revoke keys →</a></div>
               </div>
-                : <div className="p-6"><div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-white/15"><span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-[#0b5cff] dark:bg-blue-400/10"><KeyRound className="h-5 w-5" /></span><h3 className="mt-4 font-semibold">Create your first API key</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">Give the key a recognizable name and optional expiration date.</p><a href="/Identity/Account/Manage/ApiKeys" className="mt-5 inline-flex rounded-[10px] bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white">Open key manager</a></div></div>}
+                : <div className="p-6"><div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-white/15"><span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-[#0b5cff] dark:bg-blue-400/10"><KeyRound className="h-5 w-5" /></span><h3 className="mt-4 font-semibold">Create your first API key</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">Give the key a recognizable name and optional expiration date.</p><a href={`/Identity/Account/Manage/ApiKeys?workspaceId=${encodeURIComponent(tabWorkspaceId())}`} className="mt-5 inline-flex rounded-[10px] bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white">Open key manager</a></div></div>}
         </Panel>
         <Panel className="border-[#172b49] bg-gradient-to-br from-[#0d1d35] to-[#07101f] p-6 text-white shadow-[0_18px_45px_rgba(4,12,26,.18)] dark:border-blue-300/15">
           <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#86efcd]/10 text-[#86efcd]"><TerminalSquare className="h-5 w-5" /></span>

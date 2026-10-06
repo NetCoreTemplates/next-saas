@@ -20,7 +20,7 @@ public static partial class SaasAudit
         "membership:ownership.transferred", "membership:member.left",
         "usage:quota.warning", "usage:quota.rejected", "usage:upload-counter.failed", "usage:gauge.adjusted",
         "plan:draft.saved", "plan:version.published",
-        "billing:access-mode.changed", "billing:checkout.session.confirmed", "billing:subscription.reconciled",
+        "billing:access-mode.changed", "billing:checkout.session.confirmed", "billing:subscription.changed", "billing:subscription.reconciled",
         "billing:subscription.reconciliation-failed",
         "coupon:coupon.created", "coupon:coupon.deactivated",
         "stripe:catalog.provisioned", "stripe:event.retry-requested",
@@ -35,11 +35,33 @@ public static partial class SaasAudit
         "api-key:created", "api-key:updated", "api-key:deleted",
     };
 
-    public static long Write(IDbConnection db, SaasAuditEvent auditEvent)
+    /// <summary>
+    /// Write an event to an organization's audit log. On a connection confined to an organization the event
+    /// gets that organization, otherwise it has to say which organization it's about.
+    /// </summary>
+    public static long Write(IDbConnection db, SaasAuditEvent auditEvent) =>
+        Write(db, auditEvent, () => {
+            if (!TenantCategories.Contains(auditEvent.Category))
+                throw new InvalidOperationException($"Audit category '{auditEvent.Category}' isn't about an organization, write a {nameof(PlatformAuditEvent)}.");
+            if (string.IsNullOrEmpty(auditEvent.WorkspaceId) && db.GetWorkspaceId() == null)
+                throw new InvalidOperationException($"Audit category '{auditEvent.Category}' requires an organization ID.");
+        });
+
+    /// <summary>
+    /// Write an event to the platform's audit log, for actions that aren't about one organization
+    /// </summary>
+    public static long Write(IDbConnection db, PlatformAuditEvent auditEvent) =>
+        Write(db, auditEvent, () => {
+            if (TenantCategories.Contains(auditEvent.Category))
+                throw new InvalidOperationException($"Audit category '{auditEvent.Category}' is about an organization, write a {nameof(SaasAuditEvent)}.");
+        });
+
+    private static long Write<T>(IDbConnection db, T auditEvent, Action validateLog) where T : AuditEventBase
     {
         try
         {
             Validate(auditEvent);
+            validateLog();
         }
         catch
         {
@@ -53,7 +75,7 @@ public static partial class SaasAudit
         auditEvent.IpAddress = Limit(auditEvent.IpAddress, 128);
         auditEvent.UserAgent = Limit(auditEvent.UserAgent, 512);
         auditEvent.DetailJson = RedactDetail(auditEvent.DetailJson);
-        var id = db.Insert<SaasAuditEvent>(auditEvent);
+        var id = db.Insert<T>(auditEvent);
         SaasTelemetry.AuditWritten.Add(1);
         return id;
     }
@@ -81,15 +103,13 @@ public static partial class SaasAudit
         }
     }
 
-    private static void Validate(SaasAuditEvent value)
+    private static void Validate(AuditEventBase value)
     {
         if (string.IsNullOrEmpty(value.Category)) throw new InvalidOperationException("Audit category is required.");
         if (string.IsNullOrEmpty(value.Action)) throw new InvalidOperationException("Audit action is required.");
-        if (string.IsNullOrEmpty(value.ActorId)) throw new InvalidOperationException("Audit actor is required.");
+        if (string.IsNullOrEmpty(value.UserId)) throw new InvalidOperationException("The audit event needs a user id.");
         if (!IsRegistered(value.Category, value.Action))
             throw new InvalidOperationException($"Audit action '{value.Category}:{value.Action}' is not registered.");
-        if (TenantCategories.Contains(value.Category) && string.IsNullOrEmpty(value.WorkspaceId))
-            throw new InvalidOperationException($"Audit category '{value.Category}' requires an organization ID.");
     }
 
     private static void RedactNode(JsonNode? node)
@@ -129,10 +149,11 @@ public static partial class SaasAudit
 }
 
 /// <summary>
-/// Exact overload ensures every existing and future db.Insert(SaasAuditEvent)
-/// call is routed through the audit policy instead of OrmLite's generic insert.
+/// Exact overloads ensure every existing and future db.Insert() of an audit event
+/// is routed through the audit policy instead of OrmLite's generic insert.
 /// </summary>
 public static class SaasAuditDbExtensions
 {
     public static long Insert(this IDbConnection db, SaasAuditEvent auditEvent) => SaasAudit.Write(db, auditEvent);
+    public static long Insert(this IDbConnection db, PlatformAuditEvent auditEvent) => SaasAudit.Write(db, auditEvent);
 }

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { appAuth } from "@/lib/auth"
-import { client } from "@/lib/gateway"
+import { client, getTabWorkspaceId, setTabWorkspaceId } from "@/lib/gateway"
 import { GetMyWorkspaces, SwitchWorkspace, WorkspaceAccessInfo } from "@/lib/dtos"
 import { Activity, BarChart3, Bell, Building2, ChevronsUpDown, CreditCard, FileText, Gauge, KeyRound, LayoutDashboard, LifeBuoy, LogOut, Menu, ScrollText, Settings, ShieldCheck, SlidersHorizontal, Users, X } from "lucide-react"
 import { product } from "@/lib/product"
@@ -93,7 +93,23 @@ export default function AppShell({ children, workspaceName = 'My organization' }
 
   useEffect(() => {
     if (!user?.userId) return
-    client.api(new GetMyWorkspaces()).then(api => { if (api.succeeded) setWorkspaces(api.response?.results ?? []) })
+    client.api(new GetMyWorkspaces()).then(api => {
+      if (!api.succeeded) return
+      const results = api.response?.results ?? []
+      const tabWorkspaceId = getTabWorkspaceId()
+      // The user is no longer a member of this tab's organization, or another user signed in
+      if (tabWorkspaceId && !results.some(x => x.workspace?.id === tabWorkspaceId)) {
+        setTabWorkspaceId(undefined)
+        window.location.reload()
+        return
+      }
+      // A new tab starts in the organization the user last switched to, and stays in it
+      const workspaceId = tabWorkspaceId ?? results.find(x => x.isActive)?.workspace?.id
+      if (!tabWorkspaceId) setTabWorkspaceId(workspaceId)
+      // The active organization is this tab's, which other tabs don't change
+      results.forEach(x => x.isActive = x.workspace?.id === workspaceId)
+      setWorkspaces(results)
+    })
   }, [user?.userId])
 
   useEffect(() => setMenuOpen(false), [pathname])
@@ -109,7 +125,7 @@ export default function AppShell({ children, workspaceName = 'My organization' }
     if (!workspaceId || workspaces.some(x => x.workspace?.id === workspaceId && x.isActive)) return
     setSwitching(true)
     const api = await client.api(new SwitchWorkspace({ workspaceId }))
-    if (api.succeeded) window.location.reload()
+    if (api.succeeded) { setTabWorkspaceId(workspaceId); window.location.reload() }
     else setSwitching(false)
   }
 

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowRight, Check, ShieldCheck } from 'lucide-react'
 import Layout from '@/components/layout'
 import { appAuth } from '@/lib/auth'
-import { client } from '@/lib/gateway'
+import { client, getTabWorkspaceId, setTabWorkspaceId, tabWorkspaceId } from '@/lib/gateway'
 import { BillingInterval, CreateCheckoutSession, GetMyWorkspaces, GetSaasPlans, PlanAudience, PlanInfo, QuotaEnforcement, WorkspaceKind } from '@/lib/dtos'
 import { product } from '@/lib/product'
 
@@ -85,7 +85,11 @@ export default function PricingPage() {
   useEffect(() => {
     if (!user?.userId) return
     void client.api(new GetMyWorkspaces()).then(api => {
-      const kind = api.response?.results?.find(x => x.isActive)?.workspace?.kind
+      // This tab's organization, or in a new tab the one the user last switched to
+      const results = api.response?.results ?? []
+      const workspace = (results.find(x => x.workspace?.id === getTabWorkspaceId()) ?? results.find(x => x.isActive))?.workspace
+      setTabWorkspaceId(workspace?.id)
+      const kind = workspace?.kind
       if (api.succeeded && kind) { setAudience(kind); setActiveKind(kind) }
     })
   }, [user?.userId])
@@ -99,7 +103,7 @@ export default function PricingPage() {
     if (catalogState === 'error') { setMessage('Checkout is temporarily unavailable because live pricing could not be loaded. Please try again.'); return }
     if (!price.checkoutReady) { setMessage('This price is not available for checkout. Please choose another option or try again later.'); return }
     setBusy(plan.code); setMessage(undefined)
-    const api = await client.api(new CreateCheckoutSession({priceId:price.id}))
+    const api = await client.api(new CreateCheckoutSession({ workspaceId: tabWorkspaceId(), priceId:price.id}))
     if (api.succeeded && api.response?.url) location.href=api.response.url
     else if (api.error?.errorCode === 'PlanNotAvailable') {
       const refreshed = await loadCatalog()

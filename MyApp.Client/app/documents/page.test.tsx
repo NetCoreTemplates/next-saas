@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
 }))
 
-vi.mock('@/lib/gateway', () => ({ client: { api: mocks.api, apiForm: mocks.apiForm } }))
+vi.mock('@/lib/gateway', () => ({ client: { api: mocks.api, apiForm: mocks.apiForm }, tabWorkspaceId: () => 'workspace-1' }))
 vi.mock('@/lib/auth', () => ({ ValidateAuth: (Component: React.ComponentType) => Component }))
 vi.mock('@/components/app-shell', async () => {
   const actual = await vi.importActual<typeof import('@/components/app-shell')>('@/components/app-shell')

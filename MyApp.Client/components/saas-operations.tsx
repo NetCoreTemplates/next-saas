@@ -5,7 +5,7 @@ import { Activity, Archive, BarChart3, BellRing, CheckCircle2, Clock3, DatabaseZ
 import { Panel, StatusPill } from '@/components/app-shell'
 import { appAuth } from '@/lib/auth'
 import { client } from '@/lib/gateway'
-import { AdjustCustomerGauge, ChangeWorkspaceStatus, CreateSupportAccessGrant, CreateSupportNote, DeleteCustomerOverride, EndSupportAccess, ExportPlatformAuditCsv, GetSaasAnalytics, GetSaasAnalyticsResponse, GetSaasCustomer, GetSaasOperations, GetSaasOperationsResponse, PlatformOperationType, PlatformOperatorInfo, PreviewSaasCustomerOperation, PreviewSaasCustomerOperationResponse, QueryPlatformAuditEvents, QueryPlatformOperators, QuerySaasCustomers, ReconcileSaasCustomerBilling, RetryNotificationDelivery, RetryStripeEvent, RetryWorkspaceLifecycle, RevokeSupportAccessGrant, SaasAuditEvent, SaasCustomerDetails, SaasCustomerSummary, StartSupportAccess, UpdateWorkspaceRetentionPolicy, WorkspaceStatus } from '@/lib/dtos'
+import { AdjustCustomerGauge, ChangeWorkspaceStatus, CreateSupportAccessGrant, CreateSupportNote, DeleteCustomerOverride, EndSupportAccess, ExportPlatformAuditCsv, GetSaasAnalytics, GetSaasAnalyticsResponse, GetSaasCustomer, GetSaasOperations, GetSaasOperationsResponse, PlatformOperationType, PlatformOperatorInfo, PreviewSaasCustomerOperation, PreviewSaasCustomerOperationResponse, QueryPlatformAuditEvents, QueryPlatformOperators, QuerySaasCustomers, ReconcileSaasCustomerBilling, RetryNotificationDelivery, RetryStripeEvent, RetryWorkspaceLifecycle, RevokeSupportAccessGrant, AuditEventInfo, SaasCustomerDetails, SaasCustomerSummary, StartSupportAccess, UpdateWorkspaceRetentionPolicy, WorkspaceStatus } from '@/lib/dtos'
 
 const fmt=(n?:number)=>(n??0).toLocaleString()
 const metricValue=(value?:number,format?:string)=>format?.startsWith('currency:')?new Intl.NumberFormat(undefined,{style:'currency',currency:format.slice(9),maximumFractionDigits:0}).format(value??0):fmt(value)
@@ -17,7 +17,7 @@ export type SaasOperationsView = 'overview' | 'customers' | 'usage' | 'operation
 
 export default function SaasOperations({view='overview'}:{view?:SaasOperationsView}){
   const {hasRole}=appAuth();const isAdmin=hasRole('Admin')
-  const [analytics,setAnalytics]=useState<GetSaasAnalyticsResponse>();const [operations,setOperations]=useState<GetSaasOperationsResponse>();const [customer,setCustomer]=useState<SaasCustomerDetails>();const [workspaceId,setWorkspaceId]=useState('');const [busy,setBusy]=useState<string>();const [notice,setNotice]=useState<{ok:boolean,text:string}>();const [customers,setCustomers]=useState<SaasCustomerSummary[]>([]);const [search,setSearch]=useState('');const [operators,setOperators]=useState<PlatformOperatorInfo[]>([]);const [audits,setAudits]=useState<SaasAuditEvent[]>([]);const [auditSearch,setAuditSearch]=useState('');const [pending,setPending]=useState<PendingOperation>();const [confirmation,setConfirmation]=useState('');const [reason,setReason]=useState('')
+  const [analytics,setAnalytics]=useState<GetSaasAnalyticsResponse>();const [operations,setOperations]=useState<GetSaasOperationsResponse>();const [customer,setCustomer]=useState<SaasCustomerDetails>();const [workspaceId,setWorkspaceId]=useState('');const [busy,setBusy]=useState<string>();const [notice,setNotice]=useState<{ok:boolean,text:string}>();const [customers,setCustomers]=useState<SaasCustomerSummary[]>([]);const [search,setSearch]=useState('');const [operators,setOperators]=useState<PlatformOperatorInfo[]>([]);const [audits,setAudits]=useState<AuditEventInfo[]>([]);const [auditSearch,setAuditSearch]=useState('');const [pending,setPending]=useState<PendingOperation>();const [confirmation,setConfirmation]=useState('');const [reason,setReason]=useState('')
   const needsAnalytics=isAdmin&&(view==='overview'||view==='usage')
   const needsOperations=view==='customers'||view==='operations'||view==='security'
   const needsCustomers=view==='customers'||view==='security'
@@ -335,7 +335,7 @@ export default function SaasOperations({view='overview'}:{view?:SaasOperationsVi
 <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
 <div>
 <h2 className="font-semibold">Platform audit stream</h2>
-<p className="mt-1 text-xs text-slate-400">Search actors, targets, reasons, and request correlation IDs.</p>
+<p className="mt-1 text-xs text-slate-400">Search users, targets, reasons, and request correlation IDs.</p>
 </div>
 <div className="flex gap-2">
 <form onSubmit={async e=>{e.preventDefault();const api=await client.api(new QueryPlatformAuditEvents({search:auditSearch||undefined,take:100}));if(api.succeeded)setAudits(api.response?.results??[])}} className="relative">
@@ -354,7 +354,7 @@ export default function SaasOperations({view='overview'}:{view?:SaasOperationsVi
 <p className="mt-1 text-slate-400">{x.category} · {x.workspaceId||'platform'}</p>
 </div>
 <div className="text-slate-500">
-<p>{x.actorId}</p>
+<p>{x.userId}</p>
 <p className="mt-1 truncate text-[10px]">{x.reason||x.subjectId}</p>
 </div>
 <span className="text-[10px] text-slate-400">{x.createdDate?new Date(x.createdDate).toLocaleString():'—'}</span>

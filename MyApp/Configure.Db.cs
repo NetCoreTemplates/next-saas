@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceStack.Data;
 using ServiceStack.OrmLite;
 using MyApp.Data;
+using MyApp.ServiceInterface;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Data.Sqlite;
 
@@ -52,18 +53,19 @@ public class ConfigureDb : IHostingStartup
                 throw new InvalidOperationException(
                     $"Database.Provider is {provider} but DefaultConnection is a SQLite connection string.");
 
+            OrmLiteConfigurationBuilder ormLite;
             switch (provider)
             {
                 case "postgres":
-                    services.AddOrmLite(options => options.UsePostgres(configuredConnection));
+                    ormLite = services.AddOrmLite(options => options.UsePostgres(configuredConnection));
                     services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(configuredConnection));
                     break;
                 case "sqlserver":
-                    services.AddOrmLite(options => options.UseSqlServer(configuredConnection));
+                    ormLite = services.AddOrmLite(options => options.UseSqlServer(configuredConnection));
                     services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(configuredConnection));
                     break;
                 case "mysql":
-                    services.AddOrmLite(options => options.UseMySql(configuredConnection));
+                    ormLite = services.AddOrmLite(options => options.UseMySql(configuredConnection));
                     services.AddDbContext<ApplicationDbContext>(options => options.UseMySQL(configuredConnection));
                     break;
                 default:
@@ -74,7 +76,7 @@ public class ConfigureDb : IHostingStartup
                     if (sqlite.Cache == SqliteCacheMode.Default)
                         sqlite.Cache = SqliteCacheMode.Shared;
                     var connectionString = sqlite.ToString();
-                    services.AddOrmLite(options => options.UseSqlite(connectionString));
+                    ormLite = services.AddOrmLite(options => options.UseSqlite(connectionString));
                     services.AddDbContext<ApplicationDbContext>(options => {
                         options.UseSqlite(connectionString, b => b.MigrationsAssembly(nameof(MyApp)));
                         options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
@@ -82,7 +84,18 @@ public class ConfigureDb : IHostingStartup
                     break;
             }
 
+            // Retry deadlocks, throttling and lost connections on PostgreSQL, SQL Server and MySQL (SQLite isn't retried).
+            // Transactions that update usage counters use db.RunInTransaction() to run again after a deadlock.
+            OrmLiteConfig.RetryPolicy = OrmLiteRetry.Exponential(maxRetries: 3);
+
+            // Every connection sets the audit columns of the rows it writes. Request connections and background
+            // jobs record who is writing with SaasDb.SetUserId().
+            ((OrmLiteConnectionFactory)ormLite.DbFactory).DialectProvider.OnOpenConnection = db => db.WithAuditRules();
+
             // Enable built-in Database Admin UI at /admin-ui/database
-            services.AddPlugin(new AdminDatabaseFeature());
+            services.AddPlugin(new AdminDatabaseFeature {
+                // Log differences between data models and their tables on startup
+                LogSchemaDiff = context.HostingEnvironment.IsDevelopment(),
+            });
         });
 }

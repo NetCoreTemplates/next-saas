@@ -9,21 +9,46 @@
     ViewData["ActivePage"] = ManageNavPages.ApiKeys;
 }
 
+@{
+    // API keys are created for an organization, which the link to this page says: ?workspaceId=...
+    // Without it, or for an organization the user isn't a member of, they choose one of their organizations.
+    var workspaceId = Request.Query["workspaceId"].ToString();
+    List<Workspace> workspaces;
+    using (var db = DbFactory.Open())
+    {
+        var userId = User.GetUserId();
+        var memberOf = db.Select<WorkspaceMember>(x => x.UserId == userId && x.Status == WorkspaceMemberStatus.Active)
+            .Select(x => x.WorkspaceId).ToList();
+        workspaces = db.Select<Workspace>(x => memberOf.Contains(x.Id) && x.Status != WorkspaceStatus.Deleted)
+            .OrderBy(x => x.Name).ToList();
+    }
+    var workspace = workspaces.FirstOrDefault(x => x.Id == workspaceId);
+}
+
 <div>
     <h1 class="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">
         @ViewData["Title"]
     </h1>
-    <div data-component="pages/Account/Manage/ManageUserApiKeys.mjs" data-props="@ToProps()"></div>
+    @if (workspace != null)
+    {
+        <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">API keys of <strong>@workspace.Name</strong></p>
+        <div data-component="pages/Account/Manage/ManageUserApiKeys.mjs" data-props="@ToProps(workspace.Id)"></div>
+    }
+    else
+    {
+        <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">Choose the organization to manage API keys for:</p>
+        <ul class="space-y-2">
+            @foreach (var x in workspaces)
+            {
+                <li><a class="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400" href="?workspaceId=@Uri.EscapeDataString(x.Id)">@x.Name</a></li>
+            }
+        </ul>
+    }
 </div>
 
 @{
-    IHtmlContent ToProps()
-    {
-        using var db = DbFactory.Open();
-        var preference = db.SingleById<UserWorkspacePreference>(User.GetUserId());
-        return Html.Raw(new {
-            info = HostContext.AppHost.GetPlugin<ApiKeysFeature>()?.GetApiKeyInfo(),
-            workspaceId = preference?.ActiveWorkspaceId,
-        }.ToJson().HtmlEncode());
-    }
+    IHtmlContent ToProps(string workspaceId) => Html.Raw(new {
+        info = HostContext.AppHost.GetPlugin<ApiKeysFeature>()?.GetApiKeyInfo(),
+        workspaceId,
+    }.ToJson().HtmlEncode());
 }

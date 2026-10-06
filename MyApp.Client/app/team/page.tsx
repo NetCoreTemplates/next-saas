@@ -1,5 +1,6 @@
 'use client'
 
+import { tabWorkspaceId } from '@/lib/gateway'
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useClient } from '@servicestack/react'
 import { Copy, MailPlus, RefreshCw, ShieldCheck, Trash2, UserRound, Users } from 'lucide-react'
@@ -19,7 +20,7 @@ function TeamPage() {
   const [busy, setBusy] = useState<string>()
 
   const load = useCallback(async () => {
-    const api = await client.api(new GetWorkspaceMembers())
+    const api = await client.api(new GetWorkspaceMembers({ workspaceId: tabWorkspaceId() }))
     if (api.succeeded) setMembers(api.response?.results ?? [])
   }, [client])
   useEffect(() => { void load() }, [load])
@@ -34,14 +35,14 @@ function TeamPage() {
     event.preventDefault()
     const form = event.currentTarget
     const values = new FormData(form)
-    const api = await client.api(new InviteWorkspaceMember({ email: String(values.get('email')), role: String(values.get('role')) as WorkspaceMemberRole }))
+    const api = await client.api(new InviteWorkspaceMember({ workspaceId: tabWorkspaceId(), email: String(values.get('email')), role: String(values.get('role')) as WorkspaceMemberRole }))
     if (api.succeeded) { setShowInvite(false); form.reset(); showInvitationResult(api.response); await load() }
     else setNotice(api.error?.message)
   }
   const updateRole = async (member: WorkspaceMemberInfo, role: WorkspaceMemberRole) => {
     if (!member.id) return
     setBusy(member.id)
-    const api = await client.api(new UpdateWorkspaceMemberRole({ id: member.id, role }))
+    const api = await client.api(new UpdateWorkspaceMemberRole({ workspaceId: tabWorkspaceId(), id: member.id, role }))
     setNotice(api.succeeded ? 'Member role updated.' : api.error?.message)
     setBusy(undefined)
     if (api.succeeded) await load()
@@ -49,7 +50,7 @@ function TeamPage() {
   const resend = async (member: WorkspaceMemberInfo) => {
     if (!member.id) return
     setBusy(member.id)
-    const api = await client.api(new ResendWorkspaceInvitation({ id: member.id }))
+    const api = await client.api(new ResendWorkspaceInvitation({ workspaceId: tabWorkspaceId(), id: member.id }))
     if (api.succeeded) { showInvitationResult(api.response, true); await load() }
     else setNotice(api.error?.message)
     setBusy(undefined)
@@ -57,7 +58,7 @@ function TeamPage() {
   const remove = async (member: WorkspaceMemberInfo) => {
     if (!member.id) return
     setBusy(member.id)
-    const api = await client.api(new RemoveWorkspaceMember({ id: member.id }))
+    const api = await client.api(new RemoveWorkspaceMember({ workspaceId: tabWorkspaceId(), id: member.id }))
     setNotice(api.succeeded ? member.status === 'Invited' ? 'Invitation revoked.' : 'Member access removed.' : api.error?.message)
     setBusy(undefined)
     if (api.succeeded) await load()

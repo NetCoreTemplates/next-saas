@@ -11,6 +11,12 @@ namespace MyApp.ServiceInterface;
 public static class SaasTelemetry
 {
     public const string SourceName = "MyApp.Saas";
+
+    /// <summary>
+    /// The tag on traces and request logs naming the organization a request or job worked for. It's deliberately
+    /// not a dimension of the counters below: one time series per organization doesn't scale in a metrics store.
+    /// </summary>
+    public const string WorkspaceTag = "saas.workspace_id";
     public static readonly ActivitySource Activities = new(SourceName);
     private static readonly Meter Meter = new(SourceName);
 

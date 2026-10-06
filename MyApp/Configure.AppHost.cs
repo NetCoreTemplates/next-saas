@@ -25,8 +25,14 @@ public class AppHost() : AppHostBase("Acme"), IHostingStartup
         
         SetConfig(new HostConfig {
         });
+
+        // Connections opened for a request record its user in the audit columns of the rows they write, and are
+        // confined to the organization the request is for (IRequireWorkspace). Requests that aren't for an
+        // organization can't use tables owned by one. This covers Db in Services and the connections AutoQuery opens.
+        // The connection is disposed if this throws, e.g. the user isn't a member of the organization.
+        DbConnectionRequestFilters.Add((db, req) => db.ForRequest(req));
     }
-    
+
     // Prefer the deployment secret. The checked-in OSS key keeps forks and pull
     // request builds reproducible when GitHub correctly withholds repository secrets.
     public static void RegisterKey()

@@ -14,7 +14,12 @@ const mocks = vi.hoisted(() => {
   return { api: vi.fn(), user: { id: 'user-1' } }
 })
 
-vi.mock('@/lib/gateway', () => ({ client: { api: mocks.api } }))
+vi.mock('@/lib/gateway', () => ({
+  client: { api: mocks.api },
+  tabWorkspaceId: () => 'workspace-1',
+  getTabWorkspaceId: () => 'workspace-1',
+  setTabWorkspaceId: vi.fn(),
+}))
 vi.mock('@/lib/auth', () => ({ appAuth: () => ({ user: mocks.user }) }))
 vi.mock('@/components/layout', () => ({ default: ({ children }: React.PropsWithChildren) => <main>{children}</main> }))
 vi.mock('next/link', () => ({ default: ({ children, href, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a> }))

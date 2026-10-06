@@ -85,10 +85,12 @@ public class RegisterService(UserManager<ApplicationUser> userManager, IEmailSen
         // the invited email address.
         if (saasConfig.EnablePersonalWorkspaces)
         {
+            // The new user's organization doesn't exist yet, so it's created on an unconfined connection
+            var db = Db.AcrossWorkspaces();
             if (workspaceKind == WorkspaceKind.Business)
-                saasManager.CreateOrganization(Db, userId, organizationName!, newUser.Email);
+                saasManager.CreateOrganization(db, userId, organizationName!, newUser.Email);
             else
-                saasManager.EnsurePersonalWorkspace(Db, userId, newUser.DisplayName, newUser.Email);
+                saasManager.EnsurePersonalWorkspace(db, userId, newUser.DisplayName, newUser.Email);
         }
 
         var returnUrl = SafeReturnUrl(request.Meta?.GetValueOrDefault("returnUrl"));

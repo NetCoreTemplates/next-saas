@@ -2,6 +2,7 @@
 
 namespace MyApp.ServiceModel;
 
+[Tag(TagNames.Auth)]
 [Route("/confirm-email")]
 public class ConfirmEmail : IGet, IReturnVoid
 {

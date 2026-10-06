@@ -1,5 +1,6 @@
 'use client'
 
+import { tabWorkspaceId } from '@/lib/gateway'
 import Link from 'next/link'
 import { useClient } from '@servicestack/react'
 import { ArrowRight, CalendarDays, CheckCircle2, CreditCard, ExternalLink, LoaderCircle, ReceiptText, ShieldCheck } from 'lucide-react'
@@ -28,7 +29,7 @@ function BillingPage() {
     setCheckoutState('confirming')
     const sessionId = query.get('session_id') || undefined
 
-    void client.api(new ConfirmCheckoutSession({ sessionId })).then(async api => {
+    void client.api(new ConfirmCheckoutSession({ workspaceId: tabWorkspaceId(), sessionId })).then(async api => {
       if (!api.succeeded || !api.response?.confirmed) {
         setCheckoutState('error')
         setNotice(api.error?.message || 'Stripe has not completed this Checkout Session yet. Verify webhook forwarding and try again.')
@@ -43,7 +44,7 @@ function BillingPage() {
   const portal = async () => {
     setBusy(true)
     setNotice(undefined)
-    const api = await client.api(new CreateCustomerPortalSession())
+    const api = await client.api(new CreateCustomerPortalSession({ workspaceId: tabWorkspaceId() }))
     if (api.succeeded && api.response?.url) window.location.href = api.response.url
     else setNotice(api.error?.message || 'Unable to open the Stripe billing portal.')
     setBusy(false)

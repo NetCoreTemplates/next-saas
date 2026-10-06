@@ -1,5 +1,6 @@
 'use client'
 
+import { tabWorkspaceId } from '@/lib/gateway'
 import { useCallback, useEffect, useState } from 'react'
 import { Bell, Check, Mail, SlidersHorizontal } from 'lucide-react'
 import AppShell, { PageHeading, Panel, StatusPill } from '@/components/app-shell'
@@ -24,7 +25,7 @@ function NotificationsPage(){
 
   const load=useCallback(async()=>{
     setLoading(true)
-    const [inbox,prefs]=await Promise.all([client.api(new QueryNotifications({take:100})),client.api(new GetNotificationPreferences())])
+    const [inbox,prefs]=await Promise.all([client.api(new QueryNotifications({ workspaceId: tabWorkspaceId(), take:100})),client.api(new GetNotificationPreferences({ workspaceId: tabWorkspaceId() }))])
     if(inbox.succeeded)setItems(inbox.response?.results ?? [])
     if(prefs.succeeded){const next:Record<string,boolean>={};for(const p of prefs.response?.results ?? [])if(p.templateKey&&p.channel)next[prefKey(p.templateKey,p.channel)]=p.enabled!==false;setPreferences(next)}
     setLoading(false)
@@ -37,13 +38,13 @@ function NotificationsPage(){
     setSaving(true);setNotice(undefined)
     const values:NotificationPreferenceInput[]=[]
     for(const topic of topics)for(const channel of [NotificationChannel.InApp,NotificationChannel.Email])values.push(new NotificationPreferenceInput({templateKey:topic.key,channel,enabled:enabled(topic.key,channel)}))
-    const api=await client.api(new UpdateNotificationPreferences({preferences:values}))
+    const api=await client.api(new UpdateNotificationPreferences({ workspaceId: tabWorkspaceId(), preferences:values}))
     setNotice(api.succeeded?'Notification preferences saved.':api.error?.message ?? 'Unable to save preferences.')
     setSaving(false)
   }
   const markRead=async(item:NotificationDelivery)=>{
     if(!item.id||item.readDate)return
-    const api=await client.api(new MarkNotificationRead({id:item.id}))
+    const api=await client.api(new MarkNotificationRead({ workspaceId: tabWorkspaceId(), id:item.id}))
     if(api.succeeded)setItems(current=>current.map(x=>x.id===item.id?{...x,readDate:new Date().toISOString()}:x))
   }
 

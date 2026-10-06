@@ -36,7 +36,7 @@ public class PostgreSqlIntegrationTests
             var results = await Task.WhenAll(Enumerable.Range(0, attempts).Select(async i =>
             {
                 await Task.Yield();
-                using var db = factory.Open();
+                using var db = factory.Open().ForWorkspace("workspace-1");
                 var workspace = db.SingleById<Workspace>("workspace-1");
                 var subscription = db.SingleById<BillingSubscription>("subscription-1");
                 try
@@ -85,6 +85,7 @@ public class PostgreSqlIntegrationTests
         db.CreateTable<UsageEvent>();
         db.CreateTable<CustomerEntitlementOverride>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
 
         var now = DateTime.UtcNow;
         var periodStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -93,6 +94,8 @@ public class PostgreSqlIntegrationTests
         db.Insert(new SaasPlanVersion { Id = "plan.test.v1", PlanId = "plan.test", Version = 1, Status = PlanVersionStatus.Published, CreatedDate = now, ModifiedDate = now });
         db.Insert(new SaasPlanQuota { Id = "quota.test.api", PlanVersionId = "plan.test.v1", MeterKey = "api.requests", DisplayName = "API requests", IncludedUnits = 10, Enforcement = QuotaEnforcement.HardLimit, CreatedDate = now, ModifiedDate = now });
         db.Insert(new BillingSubscription { Id = "subscription-1", WorkspaceId = "workspace-1", PlanVersionId = "plan.test.v1", Status = SubscriptionStatus.Active, PeriodStart = periodStart, PeriodEnd = periodStart.AddMonths(1), CreatedDate = now, ModifiedDate = now });
+        // SaasManager is given a connection confined to the organization, as it is by the App
+        db.ForWorkspace("workspace-1");
         new SaasManager(new SaasConfig()).GetUsage(db,
             db.SingleById<Workspace>("workspace-1"), db.SingleById<BillingSubscription>("subscription-1"));
 

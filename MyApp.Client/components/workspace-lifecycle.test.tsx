@@ -4,7 +4,7 @@ import { RequestWorkspaceDeletion } from '@/lib/dtos'
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }))
 
-vi.mock('@/lib/gateway', () => ({ client: { api: mocks.api, get: vi.fn() } }))
+vi.mock('@/lib/gateway', () => ({ client: { api: mocks.api, get: vi.fn() }, tabWorkspaceId: () => 'workspace-1' }))
 vi.mock('@/components/app-shell', () => ({
   Panel: ({ children, className }: React.PropsWithChildren<{ className?: string }>) => <div className={className}>{children}</div>,
   StatusPill: ({ children }: React.PropsWithChildren) => <span>{children}</span>,

@@ -40,6 +40,7 @@ public class SaasManagerTests
         db.CreateTable<UsageEvent>();
         db.CreateTable<CustomerEntitlementOverride>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
 
         var now = DateTime.UtcNow;
         db.Insert(new SaasPlan { Id="plan.free", Code="free", Name="Free", CreatedDate=now, ModifiedDate=now });
@@ -49,7 +50,9 @@ public class SaasManagerTests
         var manager = new SaasManager(new SaasConfig());
         var workspace = manager.EnsurePersonalWorkspace(db, "user-1", "Ada", "ada@example.com");
         Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Individual));
-        var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        // SaasManager is given a connection confined to the organization, as it is by the App
+        db.ForWorkspace(workspace.Id);
+        var subscription = db.GetSubscription();
 
         var first = manager.RecordUsage(db, workspace, subscription, "user-1", new RecordUsage { MeterKey="api.requests", Units=900, IdempotencyKey="operation-1" });
         var replay = manager.RecordUsage(db, workspace, subscription, "user-1", new RecordUsage { MeterKey="api.requests", Units=900, IdempotencyKey="operation-1" });
@@ -93,6 +96,63 @@ public class SaasManagerTests
     }
 
     [Test]
+    public void Free_plan_entitlements_after_a_subscription_ends_are_counted_in_calendar_months()
+    {
+        var factory = new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider);
+        using var db = factory.Open();
+        db.CreateTable<Workspace>();
+        db.CreateTable<WorkspaceMember>();
+        db.CreateTable<UserWorkspacePreference>();
+        db.CreateTable<SaasPlan>();
+        db.CreateTable<SaasPlanVersion>();
+        db.CreateTable<SaasPlanPrice>();
+        db.CreateTable<SaasPlanFeature>();
+        db.CreateTable<SaasPlanQuota>();
+        db.CreateTable<BillingSubscription>();
+        db.CreateTable<UsagePeriod>();
+        db.CreateTable<UsageAggregate>();
+        db.CreateTable<CustomerEntitlementOverride>();
+        db.CreateTable<SaasAuditEvent>();
+
+        var now = DateTime.UtcNow;
+        foreach (var (code, apiRequests) in new[] { ("free", 1_000L), ("pro", 100_000L) })
+        {
+            db.Insert(new SaasPlan { Id=$"plan.{code}", Code=code, Name=code, CreatedDate=now, ModifiedDate=now });
+            db.Insert(new SaasPlanVersion { Id=$"plan.{code}.v1", PlanId=$"plan.{code}", Status=PlanVersionStatus.Published, CreatedDate=now, ModifiedDate=now });
+            db.Insert(new SaasPlanQuota { Id=$"quota.{code}.api", PlanVersionId=$"plan.{code}.v1", MeterKey="api.requests", DisplayName="API requests", IncludedUnits=apiRequests, CreatedDate=now, ModifiedDate=now });
+        }
+        var manager = new SaasManager(new SaasConfig());
+        var workspace = manager.EnsurePersonalWorkspace(db, "user-1", "Ada", "ada@example.com");
+        db.ForWorkspace(workspace.Id);
+
+        // A Pro subscription that was canceled after its last billing period was mostly used
+        var subscription = db.GetSubscription();
+        subscription.PlanVersionId = "plan.pro.v1";
+        subscription.Status = SubscriptionStatus.Active;
+        subscription.PeriodStart = now.Date.AddDays(-50);
+        subscription.PeriodEnd = now.Date.AddDays(-20);
+        db.Update(subscription);
+        var paid = manager.GetUsage(db, workspace, subscription).Single();
+        var paidPeriod = db.Single<UsagePeriod>(x => x.PeriodStart == paid.PeriodStart);
+        var paidUsage = db.Single<UsageAggregate>(x => x.UsagePeriodId == paidPeriod.Id);
+        paidUsage.UsedUnits = 90_000;
+        db.Update(paidUsage);
+        subscription.Status = SubscriptionStatus.Canceled;
+        db.Update(subscription);
+
+        var usage = manager.GetUsage(db, workspace, subscription).Single();
+
+        Assert.Multiple(() => {
+            Assert.That(subscription.AccessMode, Is.EqualTo(WorkspaceAccessMode.FreeFallback));
+            Assert.That(usage.PeriodStart, Is.EqualTo(new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc)));
+            Assert.That(usage.Allowance, Is.EqualTo(1_000));
+            Assert.That(usage.UsedUnits, Is.Zero);
+            // The paid period keeps its allowance, so it isn't reported as far over the Free plan's
+            Assert.That(db.SingleById<UsagePeriod>(paidPeriod.Id).Allowance, Is.EqualTo(100_000));
+        });
+    }
+
+    [Test]
     public void Stripe_catalog_provisioning_creates_a_draft_from_a_published_plan_once()
     {
         var factory = new OrmLiteConnectionFactory(":memory:", SqliteDialect.Provider);
@@ -104,6 +164,7 @@ public class SaasManagerTests
         db.CreateTable<SaasPlanQuota>();
         db.CreateTable<BillingSubscription>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
 
         var now = DateTime.UtcNow;
         db.Insert(new SaasPlan { Id = "plan.pro", Code = "pro", Name = "Pro", Description = "For teams", Audience = PlanAudience.Business,
@@ -134,7 +195,7 @@ public class SaasManagerTests
             Assert.That(repeated.Version.Id, Is.EqualTo(draft.Version.Id));
             Assert.That(db.Count<SaasPlanVersion>(), Is.EqualTo(2));
             Assert.That(db.SingleById<SaasPlanVersion>("plan.pro.v1")!.Status, Is.EqualTo(PlanVersionStatus.Published));
-            Assert.That(db.Count<SaasAuditEvent>(x => x.Action == "draft.saved"), Is.EqualTo(1));
+            Assert.That(db.Count<PlatformAuditEvent>(x => x.Action == "draft.saved"), Is.EqualTo(1));
         });
     }
 
@@ -151,6 +212,7 @@ public class SaasManagerTests
         db.CreateTable<SaasPlanQuota>();
         db.CreateTable<BillingSubscription>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
 
         var now = DateTime.UtcNow;
         db.Insert(new Workspace { Id = "workspace-1", Name = "Acme", Slug = "acme", CreatedDate = now, ModifiedDate = now });
@@ -193,7 +255,7 @@ public class SaasManagerTests
         Assert.Multiple(() => {
             Assert.That(provisioned.HasDraft, Is.True);
             Assert.That(provisioned.Prices.Single().StripePriceId, Is.EqualTo("price_month_v2"));
-            Assert.That(db.Count<SaasAuditEvent>(x => x.Category == "stripe" && x.Action == "catalog.provisioned"), Is.EqualTo(1));
+            Assert.That(db.Count<PlatformAuditEvent>(x => x.Category == "stripe" && x.Action == "catalog.provisioned"), Is.EqualTo(1));
         });
 
         var published = manager.PublishPlanDraft(db, "admin-1", "plan.pro");
@@ -206,7 +268,7 @@ public class SaasManagerTests
             Assert.That(published.ActiveSubscriptions, Is.EqualTo(1));
             Assert.That(db.SingleById<SaasPlanVersion>("plan.pro.v1")!.Status, Is.EqualTo(PlanVersionStatus.Retired));
             Assert.That(db.SingleById<BillingSubscription>("subscription-1")!.PlanVersionId, Is.EqualTo("plan.pro.v1"));
-            Assert.That(db.Count<SaasAuditEvent>(x => x.Category == "plan"), Is.EqualTo(2));
+            Assert.That(db.Count<PlatformAuditEvent>(x => x.Category == "plan"), Is.EqualTo(2));
         });
     }
 
@@ -234,6 +296,7 @@ public class SaasManagerTests
         db.Insert(new CustomerEntitlementOverride { WorkspaceId=workspace.Id, Key="audit.read", Enabled=true, Reason="Expired", ValidUntil=now.AddMinutes(-1), CreatedDate=now, ModifiedDate=now });
 
         var resolver = new EntitlementResolver(new SaasConfig());
+        db.ForWorkspace(workspace.Id);
         var effective = resolver.GetEffective(db, workspace, subscription);
 
         Assert.Multiple(() => {
@@ -265,6 +328,7 @@ public class SaasManagerTests
         db.CreateTable<UsageReservation>();
         db.CreateTable<CustomerEntitlementOverride>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
 
         var now = DateTime.UtcNow;
         db.Insert(new SaasPlan { Id="plan.free", Code="free", Name="Free", CreatedDate=now, ModifiedDate=now });
@@ -272,7 +336,9 @@ public class SaasManagerTests
         db.Insert(new SaasPlanQuota { PlanVersionId="plan.free.v1", MeterKey="documents.stored", DisplayName="Documents stored", IncludedUnits=2, Enforcement=QuotaEnforcement.HardLimit, CreatedDate=now, ModifiedDate=now });
         var manager = new SaasManager(new SaasConfig());
         var workspace = manager.EnsurePersonalWorkspace(db, "user-1", "Ada", "ada@example.com");
-        var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+        // SaasManager is given a connection confined to the organization, as it is by the App
+        db.ForWorkspace(workspace.Id);
+        var subscription = db.GetSubscription();
 
         var first = manager.ReserveUsage(db, workspace, subscription, "user-1", "documents.stored", 1, "upload-1");
         var replay = manager.ReserveUsage(db, workspace, subscription, "user-1", "documents.stored", 1, "upload-1");
@@ -289,6 +355,63 @@ public class SaasManagerTests
             Assert.That(adjusted.UsedUnits, Is.Zero);
             Assert.That(adjusted.PeakUnits, Is.EqualTo(1));
             Assert.That(adjusted.Reset, Is.EqualTo(MeterReset.Never));
+            Assert.That(db.Count<UsageEvent>(), Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void Reservations_are_closed_once_and_keep_other_changes_to_their_usage()
+    {
+        // PostgreSQL when TEST_POSTGRES_CONNECTION is set, to check the statement that closes a reservation
+        using var database = TestDatabase.Create();
+        database.CreateTables(typeof(Workspace), typeof(WorkspaceMember), typeof(UserWorkspacePreference), typeof(SaasPlan),
+            typeof(SaasPlanVersion), typeof(SaasPlanPrice), typeof(SaasPlanFeature), typeof(SaasPlanQuota), typeof(BillingSubscription),
+            typeof(UsagePeriod), typeof(UsageAggregate), typeof(UsageEvent), typeof(UsageReservation),
+            typeof(CustomerEntitlementOverride), typeof(SaasAuditEvent), typeof(PlatformAuditEvent));
+        using var db = database.Factory.Open();
+
+        var now = DateTime.UtcNow;
+        db.Insert(new SaasPlan { Id="plan.free", Code="free", Name="Free", CreatedDate=now, ModifiedDate=now });
+        db.Insert(new SaasPlanVersion { Id="plan.free.v1", PlanId="plan.free", Status=PlanVersionStatus.Published, CreatedDate=now, ModifiedDate=now });
+        db.Insert(new SaasPlanQuota { PlanVersionId="plan.free.v1", MeterKey="documents.stored", DisplayName="Documents stored", IncludedUnits=10, Enforcement=QuotaEnforcement.HardLimit, CreatedDate=now, ModifiedDate=now });
+        var manager = new SaasManager(new SaasConfig());
+        var workspace = manager.EnsurePersonalWorkspace(db, "user-1", "Ada", "ada@example.com");
+        // SaasManager is given a connection confined to the organization, as it is by the App
+        db.ForWorkspace(workspace.Id);
+        var subscription = db.GetSubscription();
+
+        var first = manager.ReserveUsage(db, workspace, subscription, "user-1", "documents.stored", 2, "upload-1");
+        // Usage added by another request after the reservation, which settling it keeps
+        db.UpdateAdd(() => new UsageAggregate { UsedUnits = 3 }, where: x => x.WorkspaceId == workspace.Id);
+
+        var settled = manager.SettleUsage(db, workspace, subscription, "user-1", first.Id, 1);
+        var settledAgain = manager.SettleUsage(db, workspace, subscription, "user-1", first.Id, 1);
+        var releasedAfterSettled = manager.ReleaseUsage(db, workspace, subscription, "user-1", first.Id);
+
+        // Expiring a reservation that was settled after it was selected doesn't close it again
+        var second = manager.ReserveUsage(db, workspace, subscription, "user-1", "documents.stored", 2, "upload-2");
+        manager.SettleUsage(db, workspace, subscription, "user-1", second.Id, 2);
+        var expired = SaasManager.ClaimReservation(db, second.Id, () => new UsageReservation { Status = UsageReservationStatus.Expired });
+
+        // Using more than the allowance rolls back the settlement
+        var third = manager.ReserveUsage(db, workspace, subscription, "user-1", "documents.stored", 1, "upload-3");
+        var error = Assert.Throws<HttpError>(() => manager.SettleUsage(db, workspace, subscription, "user-1", third.Id, 100));
+        var aggregate = db.Single<UsageAggregate>(x => x.WorkspaceId == workspace.Id);
+
+        Assert.Multiple(() => {
+            Assert.That(settled.UsedUnits, Is.EqualTo(4));
+            Assert.That(settled.ReservedUnits, Is.Zero);
+            Assert.That(settled.PeakUnits, Is.EqualTo(4));
+            Assert.That(settledAgain.UsedUnits, Is.EqualTo(4));
+            Assert.That(releasedAfterSettled.UsedUnits, Is.EqualTo(4));
+            Assert.That(releasedAfterSettled.ReservedUnits, Is.Zero);
+            Assert.That(expired, Is.False);
+            Assert.That(db.SingleById<UsageReservation>(second.Id).Status, Is.EqualTo(UsageReservationStatus.Settled));
+            Assert.That(error!.Status, Is.EqualTo(429));
+            Assert.That(db.SingleById<UsageReservation>(third.Id).Status, Is.EqualTo(UsageReservationStatus.Pending));
+            Assert.That(aggregate.UsedUnits, Is.EqualTo(6));
+            Assert.That(aggregate.ReservedUnits, Is.EqualTo(1));
+            Assert.That(aggregate.PeakUnits, Is.EqualTo(6));
             Assert.That(db.Count<UsageEvent>(), Is.EqualTo(2));
         });
     }
@@ -318,12 +441,15 @@ public class SaasManagerTests
                 db.CreateTable<UsageReservation>();
                 db.CreateTable<CustomerEntitlementOverride>();
                 db.CreateTable<SaasAuditEvent>();
+                db.CreateTable<PlatformAuditEvent>();
                 db.Insert(new SaasPlan { Id="plan.free", Code="free", Name="Free", CreatedDate=now, ModifiedDate=now });
                 db.Insert(new SaasPlanVersion { Id="plan.free.v1", PlanId="plan.free", Status=PlanVersionStatus.Published, CreatedDate=now, ModifiedDate=now });
                 db.Insert(new SaasPlanQuota { Id="quota.free.documents", PlanVersionId="plan.free.v1", MeterKey="documents.stored", DisplayName="Documents stored", IncludedUnits=1, Enforcement=QuotaEnforcement.HardLimit, CreatedDate=now, ModifiedDate=now });
                 var manager = new SaasManager(new SaasConfig());
                 var workspace = manager.EnsurePersonalWorkspace(db, "user-1", "Ada", "ada@example.com");
-                var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+                // SaasManager is given a connection confined to the organization, as it is by the App
+                db.ForWorkspace(workspace.Id);
+                var subscription = db.GetSubscription();
                 manager.GetUsage(db, workspace, subscription); // materialize the shared period before racing
             }
 
@@ -331,7 +457,8 @@ public class SaasManagerTests
             async Task<string> Reserve(string operationId) => await Task.Run(() => {
                 using var db = factory.Open();
                 var workspace = db.Select<Workspace>().Single();
-                var subscription = db.Select<BillingSubscription>().Single();
+                db.ForWorkspace(workspace.Id);
+                var subscription = db.GetSubscription();
                 start.SignalAndWait(TimeSpan.FromSeconds(5));
                 try
                 {
@@ -381,6 +508,7 @@ public class SaasManagerTests
                 db.CreateTable<SaasPlanVersion>();
                 db.CreateTable<BillingSubscription>();
                 db.CreateTable<SaasAuditEvent>();
+                db.CreateTable<PlatformAuditEvent>();
                 db.Insert(new SaasPlan { Id="plan.free", Code="free", Name="Free", CreatedDate=now, ModifiedDate=now });
                 db.Insert(new SaasPlanVersion { Id="plan.free.v1", PlanId="plan.free", Status=PlanVersionStatus.Published, CreatedDate=now, ModifiedDate=now });
             }
@@ -424,6 +552,7 @@ public class SaasManagerTests
         db.CreateTable<SaasPlanVersion>();
         db.CreateTable<BillingSubscription>();
         db.CreateTable<SaasAuditEvent>();
+        db.CreateTable<PlatformAuditEvent>();
         var now = DateTime.UtcNow;
         var first = new Workspace { Id="workspace-first", Name="First", Slug="first", CreatedDate=now, ModifiedDate=now };
         var preferred = new Workspace { Id="workspace-preferred", Name="Preferred", Slug="preferred", CreatedDate=now, ModifiedDate=now };

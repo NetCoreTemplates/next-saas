@@ -22,6 +22,8 @@ services.AddAuthentication(options =>
     })
     .AddIdentityCookies(options => options.ApplicationCookie!.Configure(cookie =>
     {
+        // APIs answer 401 and 403 instead of redirecting to the sign-in page
+        cookie.DisableRedirectsForApis();
         cookie.Cookie.HttpOnly = true;
         cookie.Cookie.SameSite = SameSiteMode.Lax;
         cookie.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
@@ -30,6 +32,9 @@ services.AddAuthentication(options =>
         cookie.ExpireTimeSpan = TimeSpan.FromHours(8);
         cookie.SlidingExpiration = true;
     }));
+// A request sent with a user's API key is authenticated as that user, without their roles, so APIs can be called
+// with either a session or an API key. SaasApiKeyGuard limits which APIs a key can call, by its scopes.
+services.AddAuthentication().AddApiKeyAuth();
 services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo("App_Data"));
 
@@ -88,6 +93,27 @@ else
     app.UseHsts();
 }
 
+// Serve a folder's index.html, e.g. a project AI Chat published to wwwroot/p/. Routing has already chosen the
+// fallback endpoint for a folder's URL by now, which UseDefaultFiles() and UseStaticFiles() defer to.
+app.Use(async (context, next) => {
+    var path = context.Request.Path.Value;
+    if (context.Request.Method is "GET" or "HEAD")
+    {
+        if (path is { Length: > 1 } && !Path.HasExtension(path) &&
+            app.Environment.WebRootFileProvider.GetFileInfo(path.TrimEnd('/') + "/index.html") is { Exists: true, IsDirectory: false })
+        {
+            // Relative URLs in a folder's index.html are resolved against the folder
+            if (!path.EndsWith('/'))
+            {
+                context.Response.Redirect(context.Request.PathBase + context.Request.Path.ToUriComponent() + "/" + context.Request.QueryString, permanent: true);
+                return;
+            }
+            context.Request.Path = path + "index.html";
+            context.SetEndpoint(null);
+        }
+    }
+    await next();
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapCleanUrls();

@@ -1,5 +1,6 @@
 'use client'
 
+import { tabWorkspaceId } from '@/lib/gateway'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GetSaasDashboard, GetSaasDashboardResponse, GetUsageAnalytics, GetUsageAnalyticsResponse } from '@/lib/dtos'
 import { client } from '@/lib/gateway'
@@ -11,7 +12,7 @@ export function useSaasDashboard() {
   const initialized = useRef(false)
   const refresh = useCallback(async () => {
     setLoading(true)
-    const api = await client.api(new GetSaasDashboard())
+    const api = await client.api(new GetSaasDashboard({ workspaceId: tabWorkspaceId() }))
     if (api.succeeded) { setData(api.response); setError(undefined) }
     else setError(api.error?.message || 'Unable to load workspace')
     setLoading(false)
@@ -45,7 +46,7 @@ export function useUsageAnalytics(meterKey: string, days = 30, enabled = true, r
     request.current = { key, id }
     setLoading(true)
     setError(undefined)
-    void client.api(new GetUsageAnalytics({ meterKey, days })).then(api => {
+    void client.api(new GetUsageAnalytics({ workspaceId: tabWorkspaceId(), meterKey, days })).then(api => {
       if (!mounted.current || request.current.id !== id) return
       if (api.succeeded) setData(api.response)
       else setError(api.error?.message || 'Unable to load usage analytics')

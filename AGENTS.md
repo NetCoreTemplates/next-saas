@@ -31,6 +31,14 @@ Use **Organization** in all customer-facing UI and copy. The internal domain, da
 10. Customer deletion or payment failure never deletes product data; it changes access policy.
 11. The database provider is a configuration choice, never a code fork. SQLite is the default,
     and whichever provider is deployed is also the one run locally.
+12. Tenant isolation is enforced by the database connection and fails closed. Tables owned by an
+    organization implement `IHasWorkspaceId`. APIs for an organization say which one with the
+    `WorkspaceId` of their Request DTO (`IRequireWorkspace`). Connections opened for a request cannot use
+    tenant-owned tables until the user is checked to be a member of it, and are then confined to it. Code that works
+    across organizations opts out explicitly with `AcrossWorkspaces()`, or opens its connection with
+    `dbFactory.OpenAcrossWorkspaces(userId)`, in a file on the allow-list in `ArchitectureGuardTests`.
+13. Audit columns are set by the connection, not by application code. Tables with audit columns derive
+    from `SaasAuditBase`; never assign `CreatedDate`, `CreatedBy`, `ModifiedDate`, or `ModifiedBy`.
 
 ## Database providers
 
@@ -86,7 +94,7 @@ Keep configuration in the correct scope:
 - deployment-wide behavior belongs under `Saas` or `Stripe` in `MyApp/appsettings.json` and environment overrides;
 - the database provider belongs in `Database:Provider` plus a Kamal destination (see below);
 - plan versions, features, quota amounts, display order, and Stripe Price mappings belong in the RDBMS;
-- customer-specific exceptions belong in `CustomerEntitlementOverride` with actor, reason, and validity window.
+- customer-specific exceptions belong in `CustomerEntitlementOverride` with user, reason, and validity window.
 
 Effective entitlement precedence is customer override, pinned plan version, published Free plan, then global fallback.
 
@@ -134,6 +142,8 @@ PLAN.md                                      product and architecture decisions
 README.md                                    setup, Stripe, usage, and operations guide
 MyApp.ServiceModel/Saas.cs                   domain entities and API contracts
 MyApp.ServiceInterface/SaasServices.cs       workspace, usage, billing, and admin policy
+MyApp.ServiceInterface/SaasDb.cs             connection rules: tenant confinement and audit columns
+MyApp.ServiceInterface/WorkspaceData.cs      what an organization owns: export, deletion, stored files
 MyApp/Configure.Saas.cs                      dependency setup and Stripe SDK gateway
 MyApp/Migrations/Migration1000.cs            SaaS schema and default plan seed
 MyApp/appsettings.json                       global SaaS and Stripe policy
@@ -149,6 +159,11 @@ MyApp.Client/styles/index.css                design tokens and global styles
 MyApp.Client/app/admin/*/page.tsx             Operations Center static routes
 MyApp.Client/components/admin-center-page.tsx shared operator route content
 MyApp.Tests/SaasManagerTests.cs               quota and idempotency policy tests
+MyApp.Tests/TenantIsolationTests.cs           every tenant-owned table is confined to its organization
+MyApp.Tests/SaasAuditRuleTests.cs             audit columns are set by the connection
+MyApp.Tests/WorkspaceAccessTests.cs           availability by organization state
+MyApp.Tests/WorkspaceDataTests.cs             export, deletion, confined jobs, stored files
+MyApp.Tests/MaintenanceJobTests.cs            retention and rollups per organization
 ```
 
 ## Common commands
@@ -185,7 +200,9 @@ npm run test:run
 npm run build
 ```
 
-Regenerate DTOs after any `MyApp.ServiceModel` request/response change:
+DTOs are regenerated each time the App starts in Development (`Configure.StartupTasks.GenerateDtos.cs`), for
+`dtos.*` files whose `BaseUrl` is one of the App's URLs. An App started on another URL, e.g. with `--urls`, skips
+them. To regenerate them yourself after a `MyApp.ServiceModel` request/response change:
 
 ```bash
 cd MyApp.Client
@@ -200,6 +217,9 @@ npm run migrate
 ```
 
 Create a new OrmLite migration instead of editing an already shipped migration in a derived production application.
+Migrations declare their own copies of the tables they create or change, as they are at that migration, never the
+App's models in `MyApp.ServiceModel`, which are the latest version of each table. `MigrationSchemaTests` checks that
+running every migration creates the tables of the App's models.
 
 ## Backend conventions
 
@@ -223,6 +243,41 @@ Use `DateTime.UtcNow` for persisted policy timestamps. Public identifiers should
 
 Use OrmLite for product data and EF Core only for ASP.NET Identity data. Use AutoQuery for conventional administrator-facing CRUD when it does not bypass a domain invariant.
 
+### Database connections
+
+`MyApp.ServiceInterface/SaasDb.cs` declares the OrmLite connection filters and write rules every connection uses, in `FilterSet`s, so that tenant isolation and audit columns don't depend on each query and write remembering them.
+
+| Connection | Tenant-owned tables | Audit columns |
+| --- | --- | --- |
+| `Db` in a service, AutoQuery | Throw unless the Request DTO implements `IRequireWorkspace`, then confined to its organization | The signed-in user |
+| `Db.AcrossWorkspaces()` | Not confined | The same user id as `Db` |
+| `dbFactory.OpenForWorkspace(id, "job-name")` in a job or command | Confined to that organization | The name it's given |
+| `dbFactory.OpenAcrossWorkspaces("job-name")` in a job, command, or request filter | Not confined; keep explicit `WorkspaceId` conditions. Limited to the allow-list in `ArchitectureGuardTests` | The name it's given |
+| `dbFactory.Open()` | Not allowed outside migrations and the health check, which `ArchitectureGuardTests` enforces | |
+
+Rules for new code:
+
+- Implement `IRequireWorkspace` in the Request DTO of every API for an organization. `SaasDb.ForRequest()` reads it from `IRequest.Dto` when the request's connection opens, checks the user is a member of its `WorkspaceId` and confines the request; services read the organization and membership with `Db.GetWorkspaceScope()`. Never look up the organization or membership in a service.
+- `GET` APIs need `Read` access and others need `Write`. Add `[WorkspaceAccess(WorkspaceAccess.Account)]` to APIs that administer the organization itself. `Account` stays available to a suspended or read-only organization, `Read` is blocked while suspended, and `Write` is also blocked while read-only or pending deletion. Never check organization status in a service.
+- In the client pass the tab's organization with each call: `new QueryStoredFiles({ workspaceId: tabWorkspaceId() })`.
+- Then query tenant-owned tables without a `WorkspaceId` condition, look rows up with `Db.SingleById<T>(id)`, and insert them without a `WorkspaceId`. Writing the condition anyway would hide a connection that isn't confined, which instead fails closed, so `ArchitectureGuardTests` only allows it in files that work across organizations. Read the organization's subscription with `Db.GetSubscription()`.
+- Code that's given a connection and relies on it being confined, e.g. `SaasManager`'s usage methods, the entitlement resolver, notifications and the Stripe gateway, calls `db.AssertConfinedTo(workspace.Id)` first, so it can't work on every organization's rows when it's given a connection that isn't.
+- AutoQuery APIs over tenant-owned tables implement `IRequireWorkspace` too.
+- Platform APIs for one customer call `RequireCustomer(workspaceId)`, which confines the request to that customer. Only listings across customers use `PlatformDb`.
+- Never give a table a nullable `WorkspaceId`. If some of its rows aren't about an organization, split it, as the audit log is: `SaasAuditEvent` for an organization's events and `PlatformAuditEvent` for the platform's (plans, coupons, Stripe events).
+- Keep the explicit organization condition in raw SQL and in jobs that sweep across organizations. Write raw SQL with `Sql.Fmt()`, e.g. `db.ExecuteSql(Sql.Fmt($"UPDATE {Table} SET {Column} = {value} WHERE {WorkspaceId} = {workspaceId}"))`, which `ArchitectureGuardTests` enforces.
+- Work for one organization carries its `WorkspaceId` in the job payload, and the command opens `dbFactory.OpenForWorkspace(workspaceId, "name")` before reading anything. Never open a connection with `dbFactory.Open()`.
+- A job that sweeps across organizations finds its work with `dbFactory.OpenAcrossWorkspaces("name")`, then does each organization's work on its own `dbFactory.OpenForWorkspace(workspaceId, "name")` connection, as the Stripe, reconciliation and quota notification jobs do.
+- Use `files.ForWorkspace(workspaceId)` for stored objects, never `IFileStore` directly.
+- Filter, sort, count and page in the database with `Db.From<T>()`, not on a selected list. Compare text with `ToLower()` so searches behave the same on every provider.
+- Queries that every request or metered API runs are compiled with `OrmLiteQuery.Compile()` in `SaasQueries`, so their SQL is generated once and shared by every organization. `CompiledQueryTests` checks they and `SaasDb.WorkspaceFilters` reuse their SQL.
+- `Insert` and `Update` leave the row with the `WorkspaceId` and audit columns the connection wrote, so it can be returned or used without reading it back.
+- Give background code a name as its user id, and use `using (db.WithUserId("policy-name"))` for a system policy applied during a user's request.
+- Data seeded with its own audit dates uses `WithoutFilters()`, as `ExampleDataSeeder` does.
+- A new tenant-owned table implements `IHasWorkspaceId`, derives from `SaasAuditBase`, has an index or unique constraint starting with `WorkspaceId`, and is classified `tenantOwned` in `features.json`. It's then isolated, exported and deleted with its organization without further changes; add it to `WorkspaceData.NotExported` or `KeptAfterDeletion` with a reason to opt out.
+
+The docs hub explains each rule and the test that protects it: [Tenant isolation](https://react-templates.net/docs/next-saas/security/tenant-isolation) and [Organizations and tenancy](https://react-templates.net/docs/next-saas/concepts/organizations-and-tenancy).
+
 ## Workspace and identity rules
 
 - Every user receives a personal workspace lazily or at registration.
@@ -230,7 +285,8 @@ Use OrmLite for product data and EF Core only for ASP.NET Identity data. Use Aut
 - Workspace roles are Owner, Admin, Billing, and Member.
 - Only platform operators use the ASP.NET Identity `Admin` role.
 - Do not place an API key into an interactive Identity session.
-- API-key calls resolve the acting user, then the user's workspace membership.
+- A request sent with an API key is authenticated as the key's user without their roles (`AddApiKeyAuth()`), and works in the organization the key is bound to. It can only call APIs that have `[ValidateHasScope("scope")]`, with a key that has that scope. Signed-in users have every scope in `SaasApiKeys.Scopes` as claims, so the same attribute passes for them. Add the attribute, and the API to the allow-list in `ArchitectureGuardTests`, only for APIs meant for programmatic use.
+- API-key calls act as the key's user, in the organization the key was created for, after checking the user is still a member of it.
 
 ## Usage and quota rules
 

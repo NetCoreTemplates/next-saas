@@ -11,29 +11,33 @@ namespace MyApp.ServiceInterface;
 public class FileStorageServices(
     FileStorageConfig fileConfig,
     ISaasManager manager,
-    IWorkspaceContextResolver workspaceContexts,
     IEntitlementResolver entitlements,
     IFileStore files,
     IBackgroundJobs jobs) : Service
 {
     public async Task<object> Any(QueryStoredFiles request)
     {
-        var context = await GetContextAsync();
-        RequireFiles(context, write: false);
-        var rows = Db.Select<StoredFile>(x => x.WorkspaceId == context.Workspace.Id && x.Status != StoredFileStatus.Deleted)
-            .Where(x => request.Search.IsNullOrEmpty() || x.Name.Contains(request.Search!, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(x => x.CreatedDate).ToList();
+        var scope = Db.GetWorkspaceScope();
+        RequireFiles(scope);
+        // Searched and paged by the database, so the cost doesn't grow with how many files the organization has
+        var q = Db.From<StoredFile>().Where(x => x.Status != StoredFileStatus.Deleted);
+        if (!request.Search.IsNullOrEmpty())
+        {
+            var search = request.Search!.Trim().ToLowerInvariant();
+            q.And(x => x.Name.ToLower().Contains(search));
+        }
         return new QueryStoredFilesResponse {
-            Total = rows.Count,
-            Results = rows.Skip(Math.Max(0, request.Skip)).Take(Math.Clamp(request.Take, 1, 100)).Select(ToInfo).ToList(),
+            Total = Db.Count(q),
+            Results = Db.Select(q.OrderByDescending(x => x.CreatedDate).ThenBy(x => x.Id)
+                .Limit(Math.Max(0, request.Skip), Math.Clamp(request.Take, 1, 100))).Select(ToInfo).ToList(),
         };
     }
 
     public async Task<object> Any(UploadStoredFile request)
     {
-        var context = await GetContextAsync();
-        RequireFiles(context, write: true);
-        var existing = Db.Single<StoredFile>(x => x.WorkspaceId == context.Workspace.Id && x.IdempotencyKey == request.IdempotencyKey);
+        var scope = Db.GetWorkspaceScope();
+        RequireFiles(scope);
+        var existing = Db.Single<StoredFile>(x => x.IdempotencyKey == request.IdempotencyKey);
         if (existing?.Status == StoredFileStatus.Available) return ToInfo(existing);
         if (existing != null)
             throw new HttpError(409, "UploadAlreadyStarted", "An earlier upload with this idempotency key did not complete. Use a new key to retry.");
@@ -47,41 +51,38 @@ public class FileStorageServices(
         if (upload.ContentLength > fileConfig.MaxFileBytes)
             throw new HttpError(413, "FileTooLarge", $"The uploaded file exceeds the {fileConfig.MaxFileBytes} byte limit.");
 
-        var subscription = GetSubscription(context.Workspace.Id);
+        var subscription = Db.GetSubscription();
         var maximumBytes = upload.ContentLength > 0 ? upload.ContentLength : fileConfig.MaxFileBytes;
-        var documentReservation = manager.ReserveUsage(Db, context.Workspace, subscription, context.UserId,
+        var documentReservation = manager.ReserveUsage(Db, scope.Workspace, subscription, scope.UserId,
             "documents.stored", 1, request.IdempotencyKey + ":document", new { name }.ToJson());
         UsageReservation? byteReservation = null;
         StoredFile? row = null;
+        var workspaceFiles = files.ForWorkspace(scope.Workspace.Id);
         try
         {
-            byteReservation = manager.ReserveUsage(Db, context.Workspace, subscription, context.UserId,
+            byteReservation = manager.ReserveUsage(Db, scope.Workspace, subscription, scope.UserId,
                 "storage.bytes", maximumBytes, request.IdempotencyKey + ":bytes", new { name }.ToJson());
-            var now = DateTime.UtcNow;
             row = new StoredFile {
-                WorkspaceId = context.Workspace.Id, IdempotencyKey = request.IdempotencyKey, Name = name,
-                ObjectKey = $"workspaces/{context.Workspace.Id}/files/{Guid.NewGuid():N}",
+                IdempotencyKey = request.IdempotencyKey, Name = name,
+                ObjectKey = workspaceFiles.NewFileKey(),
                 ContentType = upload.ContentType ?? "application/octet-stream", ByteLength = maximumBytes,
-                Status = StoredFileStatus.Pending, UploadedBy = context.UserId,
-                CreatedDate = now, ModifiedDate = now, CreatedBy = context.UserId, ModifiedBy = context.UserId,
+                Status = StoredFileStatus.Pending, UploadedBy = scope.UserId,
             };
             Db.Insert(row);
-            var stored = await files.WriteAsync(row.ObjectKey, upload.InputStream, maximumBytes);
-            manager.SettleUsage(Db, context.Workspace, subscription, context.UserId, byteReservation.Id, stored.ByteLength);
-            manager.SettleUsage(Db, context.Workspace, subscription, context.UserId, documentReservation.Id, 1);
+            var stored = await workspaceFiles.WriteAsync(row.ObjectKey, upload.InputStream, maximumBytes);
+            manager.SettleUsage(Db, scope.Workspace, subscription, scope.UserId, byteReservation.Id, stored.ByteLength);
+            manager.SettleUsage(Db, scope.Workspace, subscription, scope.UserId, documentReservation.Id, 1);
             row.ByteLength = stored.ByteLength;
             row.Sha256 = stored.Sha256;
             row.Status = StoredFileStatus.Available;
-            row.ModifiedDate = DateTime.UtcNow;
-            row.ModifiedBy = context.UserId;
             Db.Update(row);
-            Audit(context, "file.uploaded", row.Id, new { row.Name, row.ByteLength, row.ContentType });
+            Audit(scope, "file.uploaded", row.Id, new { row.Name, row.ByteLength, row.ContentType });
             try
             {
                 // This period counter is analytical rather than an admission control for
                 // the stored object. A transient metering failure must not turn a fully
                 // persisted, quota-accounted file into a failed upload.
-                manager.RecordUsage(Db, context.Workspace, subscription, context.UserId, new RecordUsage {
+                manager.RecordUsage(Db, scope.Workspace, subscription, scope.UserId, new RecordUsage {
                     MeterKey = "documents.uploaded", Units = 1, IdempotencyKey = request.IdempotencyKey + ":uploaded",
                     MetadataJson = new { fileId = row.Id }.ToJson(),
                 });
@@ -89,8 +90,8 @@ public class FileStorageServices(
             catch (Exception ex)
             {
                 Db.Insert(new SaasAuditEvent {
-                    WorkspaceId = context.Workspace.Id, Category = "usage", Action = "upload-counter.failed",
-                    ActorId = context.UserId, SubjectId = row.Id, Outcome = "Failed", Reason = Truncate(ex.Message, 1000),
+                    Category = "usage", Action = "upload-counter.failed",
+                    UserId = scope.UserId, SubjectId = row.Id, Outcome = "Failed", Reason = Truncate(ex.Message, 1000),
                     CreatedDate = DateTime.UtcNow,
                 });
             }
@@ -98,15 +99,13 @@ public class FileStorageServices(
         }
         catch (Exception ex)
         {
-            CompensateReservation(subscription, context, byteReservation, request.IdempotencyKey + ":cleanup:bytes");
-            CompensateReservation(subscription, context, documentReservation, request.IdempotencyKey + ":cleanup:document");
+            CompensateReservation(subscription, scope, byteReservation, request.IdempotencyKey + ":cleanup:bytes");
+            CompensateReservation(subscription, scope, documentReservation, request.IdempotencyKey + ":cleanup:document");
             if (row != null)
             {
-                try { await files.DeleteAsync(row.ObjectKey); } catch { /* Retain the original upload error. */ }
+                try { await workspaceFiles.DeleteAsync(row.ObjectKey); } catch { /* Retain the original upload error. */ }
                 row.Status = StoredFileStatus.Failed;
                 row.LastError = Truncate(ex.Message, 1000);
-                row.ModifiedDate = DateTime.UtcNow;
-                row.ModifiedBy = context.UserId;
                 Db.Update(row);
             }
             throw;
@@ -115,12 +114,12 @@ public class FileStorageServices(
 
     public async Task<object> Any(DownloadStoredFile request)
     {
-        var context = await GetContextAsync();
-        RequireFiles(context, write: false);
-        var row = Db.Single<StoredFile>(x => x.Id == request.Id && x.WorkspaceId == context.Workspace.Id && x.Status == StoredFileStatus.Available)
+        var scope = Db.GetWorkspaceScope();
+        RequireFiles(scope);
+        var row = Db.Single<StoredFile>(x => x.Id == request.Id && x.Status == StoredFileStatus.Available)
             ?? throw new HttpError(404, "StoredFileNotFound", "The file was not found.");
-        var stream = await files.OpenReadAsync(row.ObjectKey);
-        Audit(context, "file.downloaded", row.Id);
+        var stream = await files.ForWorkspace(scope.Workspace.Id).OpenReadAsync(row.ObjectKey);
+        Audit(scope, "file.downloaded", row.Id);
         return new HttpResult(stream, row.ContentType) {
             Headers = { [HttpHeaders.ContentDisposition] = $"attachment; filename=\"{SafeDownloadName(row.Name)}\"" },
         };
@@ -128,61 +127,48 @@ public class FileStorageServices(
 
     public async Task<object> Any(DeleteStoredFile request)
     {
-        var context = await GetContextAsync();
-        RequireFiles(context, write: true);
-        var row = Db.Single<StoredFile>(x => x.Id == request.Id && x.WorkspaceId == context.Workspace.Id)
+        var scope = Db.GetWorkspaceScope();
+        RequireFiles(scope);
+        var row = Db.SingleById<StoredFile>(request.Id)
             ?? throw new HttpError(404, "StoredFileNotFound", "The file was not found.");
         if (row.Status is StoredFileStatus.Deleted or StoredFileStatus.Deleting) return new EmptyResponse();
         row.Status = StoredFileStatus.Deleting;
-        row.ModifiedDate = DateTime.UtcNow;
-        row.ModifiedBy = context.UserId;
         Db.Update(row);
-        Audit(context, "file.deletion-requested", row.Id);
-        jobs.EnqueueCommand<DeleteStoredFileCommand>(new DeleteStoredFileWork { FileId = row.Id });
+        Audit(scope, "file.deletion-requested", row.Id);
+        jobs.EnqueueForWorkspace<DeleteStoredFileCommand>(scope.Workspace.Id, new DeleteStoredFileWork { WorkspaceId = scope.Workspace.Id, FileId = row.Id });
         return new EmptyResponse();
     }
 
     public async Task<object> Any(DownloadWorkspaceExport request)
     {
-        var context = await GetContextAsync();
-        if (!context.IsAdmin) throw new HttpError(403, "WorkspaceAdminRequired", "Organization Owner or Admin role is required.");
-        var artifact = Db.Single<DataExportArtifact>(x => x.Id == request.Id && x.WorkspaceId == context.Workspace.Id && x.ExpiresAt > DateTime.UtcNow)
+        var scope = Db.GetWorkspaceScope();
+        if (!scope.IsAdmin) throw new HttpError(403, "WorkspaceAdminRequired", "Organization Owner or Admin role is required.");
+        var artifact = Db.Single<DataExportArtifact>(x => x.Id == request.Id && x.ExpiresAt > DateTime.UtcNow)
             ?? throw new HttpError(404, "ExportNotFound", "The export was not found or has expired.");
-        var stream = await files.OpenReadAsync(artifact.ObjectKey);
+        var stream = await files.ForWorkspace(scope.Workspace.Id).OpenReadAsync(artifact.ObjectKey);
         artifact.DownloadedAt = DateTime.UtcNow;
-        artifact.ModifiedDate = DateTime.UtcNow;
-        artifact.ModifiedBy = context.UserId;
         Db.Update(artifact);
-        Audit(context, "export.downloaded", artifact.Id);
+        Audit(scope, "export.downloaded", artifact.Id);
         return new HttpResult(stream, "application/zip") {
-            Headers = { [HttpHeaders.ContentDisposition] = $"attachment; filename=\"{context.Workspace.Slug}-export.zip\"" },
+            Headers = { [HttpHeaders.ContentDisposition] = $"attachment; filename=\"{scope.Workspace.Slug}-export.zip\"" },
         };
     }
 
-    private async Task<WorkspaceContext> GetContextAsync() => workspaceContexts.Resolve(Db, await GetSessionAsync(), Request);
-
-    private BillingSubscription GetSubscription(string workspaceId) =>
-        Db.Single<BillingSubscription>(x => x.WorkspaceId == workspaceId)
-        ?? throw new HttpError(404, "SubscriptionNotFound", "The organization subscription was not found.");
-
-    private void RequireFiles(WorkspaceContext context, bool write)
+    // Whether the organization's state allows the request was decided when its connection was opened
+    private void RequireFiles(WorkspaceScope scope)
     {
-        var subscription = GetSubscription(context.Workspace.Id);
-        manager.EvaluateAccess(Db, context.Workspace, subscription);
-        if (subscription.AccessMode == WorkspaceAccessMode.Suspended || context.Workspace.Status == WorkspaceStatus.Deleted ||
-            write && (context.Workspace.Status != WorkspaceStatus.Active || subscription.AccessMode == WorkspaceAccessMode.ReadOnly))
-            throw new HttpError(423, "WorkspaceReadOnly", "File changes are unavailable while the organization is not active.");
-        if (!entitlements.HasFeature(Db, context.Workspace, subscription, "files.basic"))
+        var subscription = Db.GetSubscription();
+        if (!entitlements.HasFeature(Db, scope.Workspace, subscription, "files.basic"))
             throw new HttpError(403, "FeatureNotEntitled", "File storage is not included in the current plan.");
     }
 
-    private void Audit(WorkspaceContext context, string action, string subjectId, object? detail = null) => Db.Insert(new SaasAuditEvent {
-        WorkspaceId = context.Workspace.Id, Category = "storage", Action = action, ActorId = context.UserId,
+    private void Audit(WorkspaceScope scope, string action, string subjectId, object? detail = null) => Db.Insert(new SaasAuditEvent {
+        Category = "storage", Action = action, UserId = scope.UserId,
         SubjectId = subjectId, DetailJson = detail?.ToJson(), IpAddress = Request?.RemoteIp,
         UserAgent = Request?.UserAgent, CreatedDate = DateTime.UtcNow,
     });
 
-    private void CompensateReservation(BillingSubscription subscription, WorkspaceContext context,
+    private void CompensateReservation(BillingSubscription subscription, WorkspaceScope scope,
         UsageReservation? reservation, string adjustmentKey)
     {
         if (reservation == null) return;
@@ -191,11 +177,11 @@ public class FileStorageServices(
             var current = Db.SingleById<UsageReservation>(reservation.Id);
             if (current?.Status == UsageReservationStatus.Pending)
             {
-                manager.ReleaseUsage(Db, context.Workspace, subscription, context.UserId, current.Id);
+                manager.ReleaseUsage(Db, scope.Workspace, subscription, scope.UserId, current.Id);
             }
             else if (current?.Status == UsageReservationStatus.Settled && current.SettledUnits > 0)
             {
-                manager.AdjustGauge(Db, context.Workspace, subscription, context.UserId, current.MeterKey,
+                manager.AdjustGauge(Db, scope.Workspace, subscription, scope.UserId, current.MeterKey,
                     -current.SettledUnits.Value, adjustmentKey, "upload-compensation");
             }
         }
@@ -215,9 +201,11 @@ public class FileStorageServices(
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 }
 
+// Work for one organization says which, so the command can confine its connection before it reads anything
 public class DeleteStoredFileWork
 {
-    public string FileId { get; set; } = "";
+    public string WorkspaceId { get; set; } = default!;
+    public string FileId { get; set; } = default!;
 }
 
 [Worker("storage")]
@@ -228,34 +216,36 @@ public class DeleteStoredFileCommand(
 {
     protected override async Task RunAsync(DeleteStoredFileWork request, CancellationToken token)
     {
-        using var db = dbFactory.Open();
+        using var db = dbFactory.OpenForWorkspace(request.WorkspaceId, "file-deletion-job");
         var row = db.SingleById<StoredFile>(request.FileId);
         if (row == null || row.Status == StoredFileStatus.Deleted) return;
-        var workspace = db.SingleById<Workspace>(row.WorkspaceId);
-        var subscription = db.Single<BillingSubscription>(x => x.WorkspaceId == row.WorkspaceId);
+        // The file is deleted for the user who requested it
+        var requestedBy = row.ModifiedBy;
+        using var _ = db.WithUserId(requestedBy);
+        var workspace = db.SingleById<Workspace>(request.WorkspaceId);
+        var subscription = db.GetSubscription();
         try
         {
-            await files.DeleteAsync(row.ObjectKey, token);
-            manager.AdjustGauge(db, workspace, subscription, row.ModifiedBy, "storage.bytes", -row.ByteLength, $"file:{row.Id}:delete:bytes", "file-delete");
-            manager.AdjustGauge(db, workspace, subscription, row.ModifiedBy, "documents.stored", -1, $"file:{row.Id}:delete:document", "file-delete");
+            await files.ForWorkspace(request.WorkspaceId).DeleteAsync(row.ObjectKey, token);
+            manager.AdjustGauge(db, workspace, subscription, requestedBy, "storage.bytes", -row.ByteLength, $"file:{row.Id}:delete:bytes", "file-delete");
+            manager.AdjustGauge(db, workspace, subscription, requestedBy, "documents.stored", -1, $"file:{row.Id}:delete:document", "file-delete");
             row.Status = StoredFileStatus.Deleted;
             row.DeletedDate = DateTime.UtcNow;
             row.LastError = null;
-            row.ModifiedDate = DateTime.UtcNow;
             db.Update(row);
-            db.Insert(new SaasAuditEvent { WorkspaceId = row.WorkspaceId, Category = "storage", Action = "file.deleted", ActorId = row.ModifiedBy, SubjectId = row.Id, CreatedDate = DateTime.UtcNow });
+            db.Insert(new SaasAuditEvent { Category = "storage", Action = "file.deleted", UserId = requestedBy, SubjectId = row.Id, CreatedDate = DateTime.UtcNow });
         }
         catch (Exception ex)
         {
             row.Status = StoredFileStatus.Deleting;
             row.LastError = ex.Message.Length <= 1000 ? ex.Message : ex.Message[..1000];
-            row.ModifiedDate = DateTime.UtcNow;
             db.Update(row);
             throw;
         }
     }
 }
 
+[Worker("lifecycle")]
 public class ProcessWorkspaceLifecycleCommand(
     IDbConnectionFactory dbFactory,
     IFileStore files,
@@ -263,24 +253,23 @@ public class ProcessWorkspaceLifecycleCommand(
 {
     protected override async Task RunAsync(ProcessWorkspaceLifecycle request, CancellationToken token)
     {
-        using var db = dbFactory.Open();
+        // Exporting and deleting an organization runs on a connection that can't reach any other
+        using var db = dbFactory.OpenForWorkspace(request.WorkspaceId, "lifecycle-job");
         var operation = db.SingleById<WorkspaceLifecycleRequest>(request.RequestId);
         if (operation == null || operation.Status is LifecycleRequestStatus.Completed or LifecycleRequestStatus.Canceled) return;
         if (operation.ScheduledAt != null && operation.ScheduledAt > DateTime.UtcNow) return;
+        var workspace = db.SingleById<Workspace>(request.WorkspaceId);
         operation.Status = LifecycleRequestStatus.Processing;
-        operation.ModifiedDate = DateTime.UtcNow;
-        operation.ModifiedBy = "lifecycle-job";
         db.Update(operation);
         try
         {
             if (operation.Type == LifecycleRequestType.Export)
-                await ExportAsync(db, operation, token);
+                await ExportAsync(db, workspace, operation, token);
             else if (operation.Type == LifecycleRequestType.Delete)
-                await DeleteAsync(db, operation, token);
+                await DeleteAsync(db, workspace, operation, token);
             operation.Status = LifecycleRequestStatus.Completed;
             operation.CompletedAt = DateTime.UtcNow;
             operation.LastError = null;
-            operation.ModifiedDate = DateTime.UtcNow;
             db.Update(operation);
             SaasTelemetry.LifecycleCompleted.Add(1,
                 new KeyValuePair<string, object?>("type", operation.Type.ToString()));
@@ -292,17 +281,16 @@ public class ProcessWorkspaceLifecycleCommand(
             if (operation.Status != LifecycleRequestStatus.Blocked)
                 operation.Status = LifecycleRequestStatus.Failed;
             operation.LastError = ex.Message.Length <= 2000 ? ex.Message : ex.Message[..2000];
-            operation.ModifiedDate = DateTime.UtcNow;
             db.Update(operation);
             throw;
         }
     }
 
-    private async Task ExportAsync(IDbConnection db, WorkspaceLifecycleRequest operation, CancellationToken token)
+    private async Task ExportAsync(IDbConnection db, Workspace workspace, WorkspaceLifecycleRequest operation, CancellationToken token)
     {
         if (db.Exists<DataExportArtifact>(x => x.LifecycleRequestId == operation.Id)) return;
-        var workspace = db.SingleById<Workspace>(operation.WorkspaceId);
-        var storedFiles = db.Select<StoredFile>(x => x.WorkspaceId == workspace.Id && x.Status == StoredFileStatus.Available);
+        var workspaceFiles = files.ForWorkspace(workspace.Id);
+        var storedFiles = db.Select<StoredFile>(x => x.Status == StoredFileStatus.Available);
         var temporaryPath = Path.Combine(Path.GetTempPath(), $"acme-export-{operation.Id}.zip");
         try
         {
@@ -313,33 +301,31 @@ public class ProcessWorkspaceLifecycleCommand(
                 await using (var manifestStream = manifest.Open())
                 await using (var writer = new StreamWriter(manifestStream))
                 {
-                    var value = new {
-                        exportedAt = DateTime.UtcNow,
-                        workspace,
-                        members = db.Select<WorkspaceMember>(x => x.WorkspaceId == workspace.Id),
-                        usage = db.Select<UsageEvent>(x => x.WorkspaceId == workspace.Id),
-                        files = storedFiles.Select(x => new { x.Id, x.Name, x.ContentType, x.ByteLength, x.Sha256, x.CreatedDate }),
-                    };
-                    await writer.WriteAsync(value.ToJson());
+                    // Every table the organization owns is exported, see WorkspaceData
+                    var tables = WorkspaceData.ExportJson(db).Select(x => $"{x.Key.ToJson()}:{x.Value}");
+                    await writer.WriteAsync("{" +
+                        $"\"exportedAt\":{DateTime.UtcNow.ToJson()}," +
+                        $"\"workspace\":{workspace.ToJson()}," +
+                        $"\"tables\":{{{string.Join(",", tables)}}}" +
+                        "}");
                 }
                 foreach (var row in storedFiles)
                 {
                     var entry = archive.CreateEntry($"files/{row.Id}-{Path.GetFileName(row.Name)}", CompressionLevel.Fastest);
                     await using var entryStream = entry.Open();
-                    await using var source = await files.OpenReadAsync(row.ObjectKey, token);
+                    await using var source = await workspaceFiles.OpenReadAsync(row.ObjectKey, token);
                     await source.CopyToAsync(entryStream, token);
                 }
             }
             await using var input = new FileStream(temporaryPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
-            var objectKey = $"workspaces/{workspace.Id}/exports/{operation.Id}.zip";
-            var stored = await files.WriteAsync(objectKey, input, long.MaxValue, token);
+            var objectKey = workspaceFiles.ExportKey(operation.Id);
+            var stored = await workspaceFiles.WriteAsync(objectKey, input, long.MaxValue, token);
             var now = DateTime.UtcNow;
             db.Insert(new DataExportArtifact {
-                LifecycleRequestId = operation.Id, WorkspaceId = workspace.Id, ObjectKey = objectKey,
+                LifecycleRequestId = operation.Id, ObjectKey = objectKey,
                 ByteLength = stored.ByteLength, Sha256 = stored.Sha256, ExpiresAt = now.AddDays(config.ExportExpiryDays),
-                CreatedDate = now, ModifiedDate = now, CreatedBy = "lifecycle-job", ModifiedBy = "lifecycle-job",
             });
-            db.Insert(new SaasAuditEvent { WorkspaceId = workspace.Id, Category = "lifecycle", Action = "export.completed", ActorId = "lifecycle-job", SubjectId = operation.Id, CreatedDate = now });
+            db.Insert(new SaasAuditEvent { Category = "lifecycle", Action = "export.completed", UserId = "lifecycle-job", SubjectId = operation.Id, CreatedDate = now });
         }
         finally
         {
@@ -347,56 +333,41 @@ public class ProcessWorkspaceLifecycleCommand(
         }
     }
 
-    private async Task DeleteAsync(IDbConnection db, WorkspaceLifecycleRequest operation, CancellationToken token)
+    private async Task DeleteAsync(IDbConnection db, Workspace workspace, WorkspaceLifecycleRequest operation, CancellationToken token)
     {
-        var workspace = db.SingleById<Workspace>(operation.WorkspaceId);
         if (workspace.Status == WorkspaceStatus.Deleted) return;
         if (db.SingleById<WorkspaceRetentionPolicy>(workspace.Id)?.LegalHold == true)
         {
             operation.Status = LifecycleRequestStatus.Blocked;
             operation.LastError = "Organization deletion is blocked by a legal hold.";
-            operation.ModifiedDate = DateTime.UtcNow;
-            operation.ModifiedBy = "lifecycle-job";
             db.Update(operation);
             throw new InvalidOperationException(operation.LastError);
         }
-        foreach (var row in db.Select<StoredFile>(x => x.WorkspaceId == workspace.Id))
-            await files.DeleteAsync(row.ObjectKey, token);
-        foreach (var artifact in db.Select<DataExportArtifact>(x => x.WorkspaceId == workspace.Id))
-            await files.DeleteAsync(artifact.ObjectKey, token);
+        var workspaceFiles = files.ForWorkspace(workspace.Id);
+        foreach (var row in db.Select<StoredFile>())
+            await workspaceFiles.DeleteAsync(row.ObjectKey, token);
+        foreach (var artifact in db.Select<DataExportArtifact>())
+            await workspaceFiles.DeleteAsync(artifact.ObjectKey, token);
         var now = DateTime.UtcNow;
-        foreach (var apiKey in db.Select<ApiKeysFeature.ApiKey>(x => x.RefIdStr == workspace.Id && x.CancelledDate == null))
+        foreach (var apiKey in db.Select<ApiKeysFeature.ApiKey>(x => x.CancelledDate == null))
         {
             apiKey.CancelledDate = now;
             db.Update(apiKey);
         }
-        var periods = db.Select<UsagePeriod>(x => x.WorkspaceId == workspace.Id);
-        foreach (var period in periods)
-        {
-            db.Delete<UsageReservation>(x => x.UsagePeriodId == period.Id);
-            db.Delete<UsageAggregate>(x => x.UsagePeriodId == period.Id);
-        }
-        db.Delete<UsageEvent>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<UsageDailyRollup>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<UsagePeriod>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<StoredFile>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<DataExportArtifact>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<NotificationPreference>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<NotificationDelivery>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<CustomerEntitlementOverride>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<SupportAccessGrant>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<SupportNote>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<WorkspaceRetentionPolicy>(x => x.WorkspaceId == workspace.Id);
+
+        // Every table the organization owns, see WorkspaceData
+        var deleted = WorkspaceData.DeleteAll(db);
+        // Not owned by the organization: members of it who had it selected
         db.Delete<UserWorkspacePreference>(x => x.ActiveWorkspaceId == workspace.Id);
-        db.Delete<WorkspaceMember>(x => x.WorkspaceId == workspace.Id);
-        db.Delete<BillingSubscription>(x => x.WorkspaceId == workspace.Id);
+
         workspace.Name = "Deleted organization";
         workspace.Slug = $"deleted-{workspace.Id}";
         workspace.BillingEmail = null;
         workspace.Status = WorkspaceStatus.Deleted;
-        workspace.ModifiedDate = now;
-        workspace.ModifiedBy = "lifecycle-job";
         db.Update(workspace);
-        db.Insert(new SaasAuditEvent { WorkspaceId = workspace.Id, Category = "lifecycle", Action = "deletion.completed", ActorId = "lifecycle-job", SubjectId = operation.Id, CreatedDate = now });
+        db.Insert(new SaasAuditEvent {
+            Category = "lifecycle", Action = "deletion.completed", UserId = "lifecycle-job",
+            SubjectId = operation.Id, DetailJson = new { deleted }.ToJson(), CreatedDate = now,
+        });
     }
 }

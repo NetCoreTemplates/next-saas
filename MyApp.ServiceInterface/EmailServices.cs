@@ -55,7 +55,9 @@ public class SendEmail
     public required string Subject { get; set; }
     public string? BodyText { get; set; }
     public string? BodyHtml { get; set; }
+    /// <summary>The notification delivery this email is for, and the organization it belongs to</summary>
     public string? DeliveryId { get; set; }
+    public string? WorkspaceId { get; set; }
 }
 
 [Worker("smtp")]
@@ -97,25 +99,24 @@ public class SendEmailCommand(ILogger<SendEmailCommand> logger, IBackgroundJobs 
         try
         {
             await client.SendMailAsync(msg, token);
-            UpdateDelivery(request.DeliveryId, NotificationDeliveryStatus.Delivered, null);
+            UpdateDelivery(request, NotificationDeliveryStatus.Delivered, null);
         }
         catch (Exception ex)
         {
-            UpdateDelivery(request.DeliveryId, NotificationDeliveryStatus.Failed, ex.Message);
+            UpdateDelivery(request, NotificationDeliveryStatus.Failed, ex.Message);
             throw;
         }
     }
 
-    private void UpdateDelivery(string? deliveryId, NotificationDeliveryStatus status, string? error)
+    private void UpdateDelivery(SendEmail request, NotificationDeliveryStatus status, string? error)
     {
-        if (deliveryId.IsNullOrEmpty()) return;
-        using var db = dbFactory.Open();
-        var delivery = db.SingleById<NotificationDelivery>(deliveryId);
+        if (request.DeliveryId.IsNullOrEmpty() || request.WorkspaceId.IsNullOrEmpty()) return;
+        using var db = dbFactory.OpenForWorkspace(request.WorkspaceId!, "smtp-job");
+        var delivery = db.SingleById<NotificationDelivery>(request.DeliveryId);
         if (delivery == null) return;
         delivery.Status = status;
         delivery.DeliveredDate = status == NotificationDeliveryStatus.Delivered ? DateTime.UtcNow : null;
         delivery.LastError = error.IsNullOrEmpty() ? null : error!.Length <= 2000 ? error : error[..2000];
-        delivery.ModifiedDate = DateTime.UtcNow;
         db.Update(delivery);
     }
 }
