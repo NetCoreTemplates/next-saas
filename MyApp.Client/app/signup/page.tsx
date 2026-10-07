@@ -112,21 +112,21 @@ function SignUpContent() {
                 </section>
             </ApiStateContext.Provider>
 
-            <div className="flex mt-8 ml-8">
+            {process.env.NODE_ENV === 'development' && <div className="flex mt-8 ml-8">
                 <h3 className="mr-4 leading-8 text-gray-500 dark:text-gray-400">Quick Links</h3>
                 <div className="flex flex-wrap max-w-lg gap-2">
                     <SecondaryButton onClick={() => setUser('new@user.com')}>
                         new@user.com
                     </SecondaryButton>
                 </div>
-            </div>
+            </div>}
         </>
     )
 }
 
 export default function SignUp() {
     return (
-        <Page title="Create your account" description="Start on Free with no payment method. Upgrade whenever you need more capacity.">
+        <Page title="Create your account" description="Start on Free with no payment method. Upgrade when you need more capacity.">
             <Suspense fallback={<div>Loading...</div>}>
                 <SignUpContent />
             </Suspense>
