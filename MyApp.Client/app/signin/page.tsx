@@ -70,7 +70,7 @@ function SignInContent() {
                     </form>
                 </section>
             </ApiStateContext.Provider>
-            <div className="mt-7 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-white/10 dark:bg-white/[.035]">
+            {process.env.NODE_ENV === 'development' && <div className="mt-7 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-white/10 dark:bg-white/[.035]">
                 <h3 className="mb-1 text-xs font-semibold text-slate-500">Development accounts</h3><p className="mb-3 text-xs text-slate-400">Click one to fill the form with a seeded account.</p>
                 <div className="flex flex-wrap max-w-lg gap-2">
                     <SecondaryButton onClick={() => setUser('admin@email.com')}>
@@ -86,7 +86,7 @@ function SignInContent() {
                         new@user.com
                     </SecondaryButton>
                 </div>
-            </div>
+            </div>}
         </>
     )
 }
