@@ -19,7 +19,7 @@ public class StripeCatalogProvisioningTests
     }
 
     [Test]
-    public void Live_catalog_creation_requires_explicit_opt_in()
+    public async Task Live_catalog_creation_requires_explicit_opt_in()
     {
         var gateway = Gateway(new StripeConfig {
             SecretKey = "sk_live_x",
@@ -27,7 +27,7 @@ public class StripeCatalogProvisioningTests
             AllowLiveCatalogProvisioning = false,
         });
 
-        var error = Assert.ThrowsAsync<HttpError>(() => gateway.ProvisionCatalogAsync(
+        var error = await Assert.ThrowsAsync<HttpError>(() => gateway.ProvisionCatalogAsync(
             new SaasPlan { Id = "plan.pro", Code = "pro" },
             "Pro", "Pro plan",
             [new SavePlanPrice { Currency = "usd", Interval = BillingInterval.Month, UnitAmount = 4900 }]));
