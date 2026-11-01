@@ -68,20 +68,13 @@ jobs:
             echo "client_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup Node.js
+      - name: Setup Vite+ and install npm dependencies
         if: steps.check_client.outputs.client_exists == 'true'
-        uses: actions/setup-node@v4
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: MyApp.Client/package-lock.json
-
-      - name: Install npm dependencies
-        if: steps.check_client.outputs.client_exists == 'true'
-        working-directory: ./MyApp.Client
-        # Do not run the local-development database bootstrap while assembling
-        # an immutable client/container artifact.
-        run: npm ci --ignore-scripts
+          node-version: '24'
+          working-directory: ./MyApp.Client
+          cache: true
 
       - name: Build client
         if: steps.check_client.outputs.client_exists == 'true'

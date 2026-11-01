@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { formatCurrency, formatDate, dateInputFormat, enforcementLabel, meterKindLabel, formatMeterUnits } from './utils'
+import { describe, it, expect } from 'vite-plus/test'
+import { formatCurrency, dateInputFormat, enforcementLabel, meterKindLabel, formatMeterUnits, formText } from './utils'
 
 describe('utils', () => {
   describe('formatCurrency', () => {
@@ -46,6 +46,17 @@ describe('utils', () => {
 
     it('should format other meters as counts', () => {
       expect(formatMeterUnits('api.requests', 1500)).toBe((1500).toLocaleString())
+    })
+  })
+
+  describe('formText', () => {
+    it('should read text fields and default missing or file fields to empty', () => {
+      const form = new FormData()
+      form.set('name', 'Acme')
+      form.set('upload', new Blob(['x']), 'x.txt')
+      expect(formText(form, 'name')).toBe('Acme')
+      expect(formText(form, 'missing')).toBe('')
+      expect(formText(form, 'upload')).toBe('')
     })
   })
 })

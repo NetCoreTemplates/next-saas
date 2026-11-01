@@ -2,7 +2,7 @@
 
 This repository is a full-stack .NET 10, ServiceStack, Next.js 16, React 19, TypeScript, OrmLite, ASP.NET Core Identity, and Stripe Billing template.
 
-Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows, and the [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) for the provider workflow that spans local development and production.
+Read [README.md](README.md) for setup and operator workflows, and the [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) for the provider workflow that spans local development and production.
 
 The canonical product documentation is the published docs hub, whose source lives in a separate
 repository. Keep it in sync with every change; see [Documentation](#documentation).
@@ -22,7 +22,7 @@ Use **Organization** in all customer-facing UI and copy. The internal domain, da
 1. ASP.NET Core is the only production runtime.
 2. Next.js produces a static export. Do not add request-time React Server Components, Route Handlers, or Server Actions.
 3. All dynamic behavior is a typed ServiceStack API.
-4. C# request and response DTOs are authoritative. Regenerate `MyApp.Client/lib/dtos.ts` after contract changes.
+4. C# request and response DTOs are authoritative. `MyApp.Client/lib/dtos.ts` is regenerated from them each time the App starts in Development.
 5. Stripe owns payment collection, invoices, credits, discounts, taxes, Products, Prices, Customers, and Subscriptions.
 6. The application owns workspaces, plan mappings, entitlements, quotas, the enforcement ledger, customer overrides, and the local Stripe projection.
 7. Never query Stripe on a normal API authorization or quota path.
@@ -138,7 +138,6 @@ Rules for those edits:
 ## Key files
 
 ```text
-PLAN.md                                      product and architecture decisions
 README.md                                    setup, Stripe, usage, and operations guide
 MyApp.ServiceModel/Saas.cs                   domain entities and API contracts
 MyApp.ServiceInterface/SaasServices.cs       workspace, usage, billing, and admin policy
@@ -153,7 +152,8 @@ MyApp/Configure.ApiKeys.cs                   API key scopes
 MyApp/Configure.BackgroundJobs.cs            job infrastructure
 MyApp/Configure.RequestLogs.cs                diagnostic request logging
 MyApp/Configure.Security.cs                   security headers, same-origin policy, auth throttling
-MyApp.Client/lib/dtos.ts                     generated TypeScript client; do not hand edit
+MyApp.Client/lib/dtos.ts                     generated on App startup; do not hand edit
+MyApp.Client/vite.config.ts                  Vite+ lint, format, and test config (not used to build)
 MyApp.Client/components/app-shell.tsx        authenticated application shell
 MyApp.Client/styles/index.css                design tokens and global styles
 MyApp.Client/app/admin/*/page.tsx             Operations Center static routes
@@ -195,14 +195,33 @@ Frontend validation:
 
 ```bash
 cd MyApp.Client
-npm run typecheck
-npm run test:run
-npm run build
+npm run check        # format + lint + type check (Oxfmt, Oxlint, TypeScript Go)
+npm run test:run     # Vitest, single run
+npm run build        # static export with next build --webpack
 ```
 
+The frontend uses the [Vite+](https://viteplus.dev) toolchain (`vp` CLI) for everything except building: Vitest,
+Oxlint and Oxfmt. Next.js still runs the dev server and the production build. All tool config (`lint`, `fmt`, `test`)
+lives in `MyApp.Client/vite.config.ts`; there is no ESLint, Prettier or `tsc` step. `vite-plus` is a local
+devDependency, so the npm scripts work without the optional global `vp` CLI. Other scripts:
+
+```bash
+npm run lint         # lint + type check only
+npm run typecheck    # type check only
+npm run fmt          # format all files
+npm run test         # Vitest watch mode; test:ui for the UI
+npm run outdated     # list outdated packages
+npm run upgrade      # bump to latest, keeping the Vite+ pins (vite, vite-plus, @vitest/ui)
+```
+
+Tests import from `vite-plus/test`, not `vitest`. `lib/dtos.ts` and `next-env.d.ts` are generated, so they are
+excluded from lint and format. Upgrade the toolchain itself with `npx --package=vite-plus@<version> vp migrate`.
+Open `MyApp.code-workspace` in VS Code so the Oxc extension resolves the local `vite-plus` for lint and format on save.
+
 DTOs are regenerated each time the App starts in Development (`Configure.StartupTasks.GenerateDtos.cs`), for
-`dtos.*` files whose `BaseUrl` is one of the App's URLs. An App started on another URL, e.g. with `--urls`, skips
-them. To regenerate them yourself after a `MyApp.ServiceModel` request/response change:
+`dtos.*` files whose `BaseUrl` is one of the App's URLs, so after a `MyApp.ServiceModel` request/response change,
+restarting the App is all that's needed. An App started on another URL, e.g. with `--urls`, skips them. Running
+`npm run dtos` by hand is typically never needed; it only works against a running App:
 
 ```bash
 cd MyApp.Client
@@ -384,10 +403,10 @@ Before completing a change:
 
 1. run `dotnet build MyApp.slnx`;
 2. run `dotnet test MyApp.slnx`;
-3. regenerate DTOs if contracts changed;
-4. run frontend type-check and tests;
+3. restart the App to regenerate DTOs if contracts changed;
+4. run `npm run check` and `npm run test:run` in `MyApp.Client`;
 5. run the production static export;
 6. verify no secret, generated database, or local data-protection key is staged;
-7. update `README.md`, `PLAN.md`, or this guide if an invariant or workflow changed;
+7. update `README.md` or this guide if an invariant or workflow changed;
 8. update the docs hub pages the change affects and build that repository (see
    [Documentation](#documentation)).

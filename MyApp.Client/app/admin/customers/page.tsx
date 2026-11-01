@@ -1,5 +1,7 @@
 'use client'
 import AdminCenterPage from '@/components/admin-center-page'
 import { ValidateAuth } from '@/lib/auth'
-function Page(){return <AdminCenterPage section="customers"/>}
-export default ValidateAuth(Page,{roles:['Admin','Support','BillingAdmin']})
+function Page() {
+  return <AdminCenterPage section="customers" />
+}
+export default ValidateAuth(Page, { roles: ['Admin', 'Support', 'BillingAdmin'] })

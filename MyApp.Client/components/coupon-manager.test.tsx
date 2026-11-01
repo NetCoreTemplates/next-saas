@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { GetSaasCouponsResponse } from '@/lib/dtos'
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }))
@@ -23,7 +23,11 @@ describe('CouponManager', () => {
   })
 
   it('loads once in React Strict Mode and shows Stripe setup guidance', async () => {
-    render(<StrictMode><CouponManager/></StrictMode>)
+    render(
+      <StrictMode>
+        <CouponManager />
+      </StrictMode>,
+    )
 
     await waitFor(() => expect(screen.getByText('Connect Stripe to manage discounts')).toBeTruthy())
     expect(mocks.api).toHaveBeenCalledTimes(1)

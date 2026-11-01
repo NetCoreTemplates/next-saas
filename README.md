@@ -58,7 +58,7 @@ Make the first decisions with the published guides, in order:
 1. [Choose your database](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) — configure the same provider for local development and production.
 2. [Customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product) — update product identity, plans, meters, and content.
 
-The architectural and product decisions are recorded in [PLAN.md](PLAN.md), and [features.json](features.json) is a machine-readable map of the modules.
+[features.json](features.json) is a machine-readable map of the modules.
 
 ## Run locally
 
@@ -251,11 +251,20 @@ Concurrent quota admission uses a conditional database update inside the same tr
 
 Step-by-step recipes are in the [development guides](https://react-templates.net/docs/next-saas/development). For production, follow the [operations runbooks](https://react-templates.net/docs/next-saas/operations) and the [production security review](https://react-templates.net/docs/next-saas/security/production-security-review).
 
-After changing C# request or response contracts, regenerate the browser client:
+The browser client in `MyApp.Client/lib/dtos.ts` is regenerated from the C# request and response contracts each
+time the App starts in Development, so after changing them, restart the App. Regenerating it by hand against a
+running App with `npm run dtos` in `MyApp.Client` is typically never needed.
+
+The frontend uses the [Vite+](https://viteplus.dev) toolchain for Vitest, Oxlint, and Oxfmt, configured in
+`MyApp.Client/vite.config.ts`; Next.js still builds the app. `vite-plus` is installed locally, so the npm scripts
+work without the optional global `vp` CLI (`curl -fsSL https://vite.plus | bash`). Open `MyApp.code-workspace` in
+VS Code for lint and format on save.
 
 ```bash
 cd MyApp.Client
-npm run dtos
+npm run check       # format + lint + type check
+npm run fmt         # format files
+npm run test        # Vitest watch mode
 ```
 
 Run the complete validation suite:
@@ -333,7 +342,7 @@ Or run individual commands:
 dotnet build MyApp.slnx
 dotnet test MyApp.slnx
 cd MyApp.Client
-npm run typecheck
+npm run check
 npm run test:run
 npm run build
 ```
