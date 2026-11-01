@@ -2,7 +2,7 @@
 
 This repository is a full-stack .NET 10, ServiceStack, Next.js 16, React 19, TypeScript, OrmLite, ASP.NET Core Identity, and Stripe Billing template.
 
-Read [PLAN.md](PLAN.md) before changing product policy. Read [README.md](README.md) for setup and operator workflows, and the [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) for the provider workflow that spans local development and production.
+Read [README.md](README.md) for setup and operator workflows, and the [database guide](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) for the provider workflow that spans local development and production.
 
 The canonical product documentation is the published docs hub, whose source lives in a separate
 repository. Keep it in sync with every change; see [Documentation](#documentation).
@@ -138,7 +138,6 @@ Rules for those edits:
 ## Key files
 
 ```text
-PLAN.md                                      product and architecture decisions
 README.md                                    setup, Stripe, usage, and operations guide
 MyApp.ServiceModel/Saas.cs                   domain entities and API contracts
 MyApp.ServiceInterface/SaasServices.cs       workspace, usage, billing, and admin policy
@@ -408,6 +407,6 @@ Before completing a change:
 4. run `npm run check` and `npm run test:run` in `MyApp.Client`;
 5. run the production static export;
 6. verify no secret, generated database, or local data-protection key is staged;
-7. update `README.md`, `PLAN.md`, or this guide if an invariant or workflow changed;
+7. update `README.md` or this guide if an invariant or workflow changed;
 8. update the docs hub pages the change affects and build that repository (see
    [Documentation](#documentation)).

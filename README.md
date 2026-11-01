@@ -58,7 +58,7 @@ Make the first decisions with the published guides, in order:
 1. [Choose your database](https://react-templates.net/docs/next-saas/getting-started/choose-your-database) — configure the same provider for local development and production.
 2. [Customize the product](https://react-templates.net/docs/next-saas/getting-started/customize-the-product) — update product identity, plans, meters, and content.
 
-The architectural and product decisions are recorded in [PLAN.md](PLAN.md), and [features.json](features.json) is a machine-readable map of the modules.
+[features.json](features.json) is a machine-readable map of the modules.
 
 ## Run locally
 
