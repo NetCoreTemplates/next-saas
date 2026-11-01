@@ -45,10 +45,10 @@ describe('useUsageAnalytics', () => {
   })
 
   it('does not refetch when loading and response state rerender the consumer', async () => {
-    const { result, rerender } = renderHook(
-      ({ meter, revision }) => useUsageAnalytics(meter, 30, true, revision),
-      { initialProps: { meter: 'api.requests', revision: 'api.requests:0:0' }, wrapper: StrictMode },
-    )
+    const { result, rerender } = renderHook(({ meter, revision }) => useUsageAnalytics(meter, 30, true, revision), {
+      initialProps: { meter: 'api.requests', revision: 'api.requests:0:0' },
+      wrapper: StrictMode,
+    })
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     for (let i = 0; i < 5; i++) rerender({ meter: 'api.requests', revision: 'api.requests:0:0' })

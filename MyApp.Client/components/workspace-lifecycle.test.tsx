@@ -29,7 +29,7 @@ describe('WorkspaceLifecycle', () => {
     fireEvent.click(button)
 
     await waitFor(() => {
-      const request = mocks.api.mock.calls.map(([value]) => value).find(value => value instanceof RequestWorkspaceDeletion)
+      const request = mocks.api.mock.calls.map(([value]) => value).find((value) => value instanceof RequestWorkspaceDeletion)
       expect(request).toMatchObject({ confirmation: 'Northstar Labs' })
       expect(request).not.toHaveProperty('currentPassword')
     })
@@ -40,12 +40,14 @@ describe('WorkspaceLifecycle', () => {
       succeeded: true,
       response: {
         results: [],
-        exports: [{
-          id: 'export-1',
-          byteLength: 1536,
-          sha256: '0123456789abcdef',
-          expiresAt: '2026-09-30T09:00:00.000Z',
-        }],
+        exports: [
+          {
+            id: 'export-1',
+            byteLength: 1536,
+            sha256: '0123456789abcdef',
+            expiresAt: '2026-09-30T09:00:00.000Z',
+          },
+        ],
       },
     })
 

@@ -49,7 +49,21 @@ describe('PlanEditor', () => {
     const plan = new SaasPlan({ id: 'plan.free', code: 'free', name: 'Free' })
     const version = new SaasPlanVersion({ id: 'plan.free.v1', planId: plan.id, version: 1, status: PlanVersionStatus.Published })
 
-    render(<StrictMode><PlanEditor plans={[plan]} versions={[version]} trialsEnabled trialRequiresPaymentMethod={false} defaultTrialDays={14} stripeConfigured={false} stripeCatalogProvisioningEnabled={false} stripeMode="Not configured" onPlanUpdated={() => {}}/></StrictMode>)
+    render(
+      <StrictMode>
+        <PlanEditor
+          plans={[plan]}
+          versions={[version]}
+          trialsEnabled
+          trialRequiresPaymentMethod={false}
+          defaultTrialDays={14}
+          stripeConfigured={false}
+          stripeCatalogProvisioningEnabled={false}
+          stripeMode="Not configured"
+          onPlanUpdated={() => {}}
+        />
+      </StrictMode>,
+    )
 
     await waitFor(() => expect(screen.queryByText('Loading plan configuration')).toBeNull())
     expect(screen.getByRole('heading', { name: 'Free' })).toBeTruthy()
@@ -64,7 +78,19 @@ describe('PlanEditor', () => {
       response: new SaasPlanDetails({ plan, version, prices: [], features: [], quotas: [] }),
     })
 
-    render(<PlanEditor plans={[plan]} versions={[version]} trialsEnabled trialRequiresPaymentMethod={false} defaultTrialDays={14} stripeConfigured={false} stripeCatalogProvisioningEnabled={false} stripeMode="Not configured" onPlanUpdated={() => {}}/>)
+    render(
+      <PlanEditor
+        plans={[plan]}
+        versions={[version]}
+        trialsEnabled
+        trialRequiresPaymentMethod={false}
+        defaultTrialDays={14}
+        stripeConfigured={false}
+        stripeCatalogProvisioningEnabled={false}
+        stripeMode="Not configured"
+        onPlanUpdated={() => {}}
+      />,
+    )
     await waitFor(() => expect(screen.queryByText('Loading plan configuration')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: /Pricing/ }))
 
@@ -75,21 +101,63 @@ describe('PlanEditor', () => {
 
   it('creates a draft automatically when provisioning a published plan with no edits', async () => {
     const plan = new SaasPlan({ id: 'plan.pro', code: 'pro', name: 'Pro', description: 'For teams', audience: PlanAudience.Business })
-    const published = new SaasPlanVersion({ id: 'plan.pro.v1', planId: plan.id, version: 1, status: PlanVersionStatus.Published, audience: PlanAudience.Business })
-    const draftVersion = new SaasPlanVersion({ id: 'plan.pro.v2', planId: plan.id, version: 2, status: PlanVersionStatus.Draft, audience: PlanAudience.Business })
-    const unmapped = new SaasPlanPrice({ id: 'price.pro.v1.month', planVersionId: published.id, currency: 'usd', interval: BillingInterval.Month, unitAmount: 4900, isActive: true })
+    const published = new SaasPlanVersion({
+      id: 'plan.pro.v1',
+      planId: plan.id,
+      version: 1,
+      status: PlanVersionStatus.Published,
+      audience: PlanAudience.Business,
+    })
+    const draftVersion = new SaasPlanVersion({
+      id: 'plan.pro.v2',
+      planId: plan.id,
+      version: 2,
+      status: PlanVersionStatus.Draft,
+      audience: PlanAudience.Business,
+    })
+    const unmapped = new SaasPlanPrice({
+      id: 'price.pro.v1.month',
+      planVersionId: published.id,
+      currency: 'usd',
+      interval: BillingInterval.Month,
+      unitAmount: 4900,
+      isActive: true,
+    })
     const mapped = new SaasPlanPrice({ ...unmapped, planVersionId: draftVersion.id, stripePriceId: 'price_stripe_pro_month' })
     const initial = new SaasPlanDetails({ plan, version: published, hasDraft: false, prices: [unmapped], features: [], quotas: [] })
     const saved = new SaasPlanDetails({ plan, version: draftVersion, hasDraft: true, prices: [unmapped], features: [], quotas: [] })
     const provisioned = new SaasPlanDetails({ plan, version: draftVersion, hasDraft: true, prices: [mapped], features: [], quotas: [] })
-    mocks.api.mockImplementation(request => Promise.resolve(request instanceof SaveSaasPlanDraft
-      ? { succeeded: true, response: saved }
-      : request instanceof ProvisionSaasPlanStripeCatalog
-        ? { succeeded: true, response: new ProvisionSaasPlanStripeCatalogResponse({ stripeProductId: 'prod_pro', prices: [{ currency: 'usd', interval: BillingInterval.Month, unitAmount: 4900, stripePriceId: 'price_stripe_pro_month', created: true }], draft: provisioned }) }
-        : { succeeded: true, response: initial }))
+    mocks.api.mockImplementation((request) =>
+      Promise.resolve(
+        request instanceof SaveSaasPlanDraft
+          ? { succeeded: true, response: saved }
+          : request instanceof ProvisionSaasPlanStripeCatalog
+            ? {
+                succeeded: true,
+                response: new ProvisionSaasPlanStripeCatalogResponse({
+                  stripeProductId: 'prod_pro',
+                  prices: [{ currency: 'usd', interval: BillingInterval.Month, unitAmount: 4900, stripePriceId: 'price_stripe_pro_month', created: true }],
+                  draft: provisioned,
+                }),
+              }
+            : { succeeded: true, response: initial },
+      ),
+    )
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    render(<PlanEditor plans={[plan]} versions={[published]} trialsEnabled trialRequiresPaymentMethod={false} defaultTrialDays={14} stripeConfigured stripeCatalogProvisioningEnabled stripeMode="Sandbox" onPlanUpdated={() => {}}/>)
+    render(
+      <PlanEditor
+        plans={[plan]}
+        versions={[published]}
+        trialsEnabled
+        trialRequiresPaymentMethod={false}
+        defaultTrialDays={14}
+        stripeConfigured
+        stripeCatalogProvisioningEnabled
+        stripeMode="Sandbox"
+        onPlanUpdated={() => {}}
+      />,
+    )
     await waitFor(() => expect(screen.queryByText('Loading plan configuration')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: /Pricing/ }))
     expect((screen.getByRole('button', { name: 'Save draft' }) as HTMLButtonElement).disabled).toBe(true)
@@ -97,7 +165,9 @@ describe('PlanEditor', () => {
 
     await waitFor(() => expect(screen.getByText(/The mappings were saved to the draft; publish it to enable Checkout/)).toBeTruthy())
     expect(mocks.api.mock.calls.map(([request]) => request.constructor.name)).toEqual([
-      'GetSaasPlanDetails', 'SaveSaasPlanDraft', 'ProvisionSaasPlanStripeCatalog',
+      'GetSaasPlanDetails',
+      'SaveSaasPlanDraft',
+      'ProvisionSaasPlanStripeCatalog',
     ])
     const draftRequest = mocks.api.mock.calls[1][0] as SaveSaasPlanDraft
     expect(draftRequest.audience).toBe(PlanAudience.Business)
@@ -114,14 +184,37 @@ describe('PlanEditor', () => {
     const initial = new SaasPlanDetails({ plan, version, hasDraft: true, prices: [current], features: [], quotas: [] })
     const saved = new SaasPlanDetails({ plan, version, hasDraft: true, prices: [updated], features: [], quotas: [] })
     const provisioned = new SaasPlanDetails({ plan, version, hasDraft: true, prices: [mapped], features: [], quotas: [] })
-    mocks.api.mockImplementation(request => Promise.resolve(request instanceof SaveSaasPlanDraft
-      ? { succeeded: true, response: saved }
-      : request instanceof ProvisionSaasPlanStripeCatalog
-        ? { succeeded: true, response: new ProvisionSaasPlanStripeCatalogResponse({ stripeProductId: 'prod_pro', prices: [{ currency: 'usd', interval: BillingInterval.Month, unitAmount: 5900, stripePriceId: 'price_stripe_pro_month', created: true }], draft: provisioned }) }
-        : { succeeded: true, response: initial }))
+    mocks.api.mockImplementation((request) =>
+      Promise.resolve(
+        request instanceof SaveSaasPlanDraft
+          ? { succeeded: true, response: saved }
+          : request instanceof ProvisionSaasPlanStripeCatalog
+            ? {
+                succeeded: true,
+                response: new ProvisionSaasPlanStripeCatalogResponse({
+                  stripeProductId: 'prod_pro',
+                  prices: [{ currency: 'usd', interval: BillingInterval.Month, unitAmount: 5900, stripePriceId: 'price_stripe_pro_month', created: true }],
+                  draft: provisioned,
+                }),
+              }
+            : { succeeded: true, response: initial },
+      ),
+    )
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    render(<PlanEditor plans={[plan]} versions={[version]} trialsEnabled trialRequiresPaymentMethod={false} defaultTrialDays={14} stripeConfigured stripeCatalogProvisioningEnabled stripeMode="Sandbox" onPlanUpdated={() => {}}/>)
+    render(
+      <PlanEditor
+        plans={[plan]}
+        versions={[version]}
+        trialsEnabled
+        trialRequiresPaymentMethod={false}
+        defaultTrialDays={14}
+        stripeConfigured
+        stripeCatalogProvisioningEnabled
+        stripeMode="Sandbox"
+        onPlanUpdated={() => {}}
+      />,
+    )
     await waitFor(() => expect(screen.queryByText('Loading plan configuration')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: /Pricing/ }))
     fireEvent.change(screen.getByLabelText('Minor units'), { target: { value: '5900' } })
@@ -138,25 +231,46 @@ describe('PlanEditor', () => {
     const plan = new SaasPlan({ id: 'plan.pro', code: 'pro', name: 'Pro', description: 'Pro plan' })
     const version = new SaasPlanVersion({ id: 'plan.pro.v2', planId: plan.id, version: 2, status: PlanVersionStatus.Draft })
     const unmapped = new SaasPlanPrice({
-      id: 'price.pro.v2.month', planVersionId: version.id, currency: 'usd',
-      interval: BillingInterval.Month, unitAmount: 4900, isActive: true,
+      id: 'price.pro.v2.month',
+      planVersionId: version.id,
+      currency: 'usd',
+      interval: BillingInterval.Month,
+      unitAmount: 4900,
+      isActive: true,
     })
     const mapped = new SaasPlanPrice({ ...unmapped, stripePriceId: 'price_stripe_pro_month' })
     const initial = new SaasPlanDetails({ plan, version, hasDraft: true, prices: [unmapped], features: [], quotas: [] })
     const saved = new SaasPlanDetails({ plan, version, hasDraft: true, prices: [mapped], features: [], quotas: [] })
-    mocks.api.mockImplementation(request => Promise.resolve(request instanceof ProvisionSaasPlanStripeCatalog
-      ? {
-          succeeded: true,
-          response: new ProvisionSaasPlanStripeCatalogResponse({
-            stripeProductId: 'prod_pro', productCreated: true,
-            prices: [{ currency: 'usd', interval: BillingInterval.Month, unitAmount: 4900, stripePriceId: 'price_stripe_pro_month', created: true }],
-            draft: saved,
-          }),
-        }
-      : { succeeded: true, response: initial }))
+    mocks.api.mockImplementation((request) =>
+      Promise.resolve(
+        request instanceof ProvisionSaasPlanStripeCatalog
+          ? {
+              succeeded: true,
+              response: new ProvisionSaasPlanStripeCatalogResponse({
+                stripeProductId: 'prod_pro',
+                productCreated: true,
+                prices: [{ currency: 'usd', interval: BillingInterval.Month, unitAmount: 4900, stripePriceId: 'price_stripe_pro_month', created: true }],
+                draft: saved,
+              }),
+            }
+          : { succeeded: true, response: initial },
+      ),
+    )
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    render(<PlanEditor plans={[plan]} versions={[version]} trialsEnabled trialRequiresPaymentMethod={false} defaultTrialDays={14} stripeConfigured stripeCatalogProvisioningEnabled stripeMode="Sandbox" onPlanUpdated={() => {}}/>)
+    render(
+      <PlanEditor
+        plans={[plan]}
+        versions={[version]}
+        trialsEnabled
+        trialRequiresPaymentMethod={false}
+        defaultTrialDays={14}
+        stripeConfigured
+        stripeCatalogProvisioningEnabled
+        stripeMode="Sandbox"
+        onPlanUpdated={() => {}}
+      />,
+    )
     await waitFor(() => expect(screen.queryByText('Loading plan configuration')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: /Pricing/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Create missing in Stripe' }))
@@ -164,7 +278,7 @@ describe('PlanEditor', () => {
     await waitFor(() => expect(screen.getByText(/The mappings were saved to the draft; publish it to enable Checkout/)).toBeTruthy())
     expect((screen.getByRole('button', { name: 'Save draft' }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'Publish changes' }) as HTMLButtonElement).disabled).toBe(false)
-    const request = mocks.api.mock.calls.map(([value]) => value).find(value => value instanceof ProvisionSaasPlanStripeCatalog)
+    const request = mocks.api.mock.calls.map(([value]) => value).find((value) => value instanceof ProvisionSaasPlanStripeCatalog)
     expect(request).toEqual(expect.objectContaining({ planId: 'plan.pro' }))
   })
 })

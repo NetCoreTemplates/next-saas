@@ -23,7 +23,11 @@ describe('CouponManager', () => {
   })
 
   it('loads once in React Strict Mode and shows Stripe setup guidance', async () => {
-    render(<StrictMode><CouponManager/></StrictMode>)
+    render(
+      <StrictMode>
+        <CouponManager />
+      </StrictMode>,
+    )
 
     await waitFor(() => expect(screen.getByText('Connect Stripe to manage discounts')).toBeTruthy())
     expect(mocks.api).toHaveBeenCalledTimes(1)

@@ -1,18 +1,18 @@
-import { FC } from "react"
-import Head from "next/head"
-import Nav from "./nav"
-import Footer from "./footer"
-import Meta from "./meta"
+import { FC } from 'react'
+import Head from 'next/head'
+import Nav from './nav'
+import Footer from './footer'
+import Meta from './meta'
 
 type Props = {
-  title: string,
-  description?: string,
-  className?: string,
-  bodyClass?: string,
-  children: React.ReactNode,
+  title: string
+  description?: string
+  className?: string
+  bodyClass?: string
+  children: React.ReactNode
 }
 
-const Page: FC<Props> = ({ title, description = "Continue to your organization.", className, bodyClass, children }) => {
+const Page: FC<Props> = ({ title, description = 'Continue to your organization.', className, bodyClass, children }) => {
   return (
     <>
       <Meta />

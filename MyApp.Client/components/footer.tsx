@@ -2,10 +2,34 @@ import { product } from '@/lib/product'
 import { Logo } from './brand'
 
 const groups = [
-  { title: 'Product', links: [{ label: 'Knowledge bases', href: '/knowledge-bases' }, { label: 'Assistants', href: '/assistants' }] },
-  { title: 'Explore', links: [{ label: 'Search', href: '/search' }, { label: 'Analytics', href: '/analytics' }] },
-  { title: 'Company', links: [{ label: 'About', href: '/about' }, { label: 'Contact', href: '/contact' }] },
-  { title: 'Legal', links: [{ label: 'Privacy', href: product.privacyUrl }, { label: 'Terms', href: product.termsUrl }] },
+  {
+    title: 'Product',
+    links: [
+      { label: 'Knowledge bases', href: '/knowledge-bases' },
+      { label: 'Assistants', href: '/assistants' },
+    ],
+  },
+  {
+    title: 'Explore',
+    links: [
+      { label: 'Search', href: '/search' },
+      { label: 'Analytics', href: '/analytics' },
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      { label: 'About', href: '/about' },
+      { label: 'Contact', href: '/contact' },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Privacy', href: product.privacyUrl },
+      { label: 'Terms', href: product.termsUrl },
+    ],
+  },
 ]
 
 const Footer = () => {
@@ -18,10 +42,24 @@ const Footer = () => {
             <p className="mt-4 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400">{product.description}</p>
           </div>
           <nav aria-label="Footer" className="grid grid-cols-2 gap-8 text-sm sm:grid-cols-4">
-            {groups.map(group => <div key={group.title}><p className="font-semibold text-slate-950 dark:text-white">{group.title}</p>{group.links.map(link => <a key={link.href} href={link.href} className="mt-3 block text-slate-500 transition hover:text-[#0b5cff] dark:text-slate-400">{link.label}</a>)}</div>)}
+            {groups.map((group) => (
+              <div key={group.title}>
+                <p className="font-semibold text-slate-950 dark:text-white">{group.title}</p>
+                {group.links.map((link) => (
+                  <a key={link.href} href={link.href} className="mt-3 block text-slate-500 transition hover:text-[#0b5cff] dark:text-slate-400">
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            ))}
           </nav>
         </div>
-        <div className="flex flex-col gap-3 pt-6 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between"><p>© {new Date().getFullYear()} {product.organizationName}</p><p>Built on ServiceStack · Next.js · Stripe</p></div>
+        <div className="flex flex-col gap-3 pt-6 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            © {new Date().getFullYear()} {product.organizationName}
+          </p>
+          <p>Built on ServiceStack · Next.js · Stripe</p>
+        </div>
       </div>
     </footer>
   )

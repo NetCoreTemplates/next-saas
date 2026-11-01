@@ -55,7 +55,7 @@ describe('documents upload', () => {
 
     await waitFor(() => expect(mocks.apiForm).toHaveBeenCalledTimes(3))
     const requests = mocks.apiForm.mock.calls.map(([request]) => request as UploadStoredFile)
-    const keys = requests.map(x => x.idempotencyKey)
+    const keys = requests.map((x) => x.idempotencyKey)
     expect(keys.every(Boolean)).toBe(true)
     expect(new Set(keys).size).toBe(3)
     await screen.findByText(/3 files are securely stored/)
