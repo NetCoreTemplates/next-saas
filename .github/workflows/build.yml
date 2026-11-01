@@ -34,13 +34,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: MyApp.Client/package-lock.json
-
       - name: Restore NuGet packages
         run: dotnet restore MyApp.slnx
 
@@ -57,12 +50,6 @@ jobs:
       #       --password "$NUGET_API_KEY" \
       #       --store-password-in-clear-text
 
-      - name: Install client dependencies
-        # postinstall bootstraps a developer SQLite database; CI owns migration
-        # and empty-state verification explicitly in later steps.
-        run: npm ci --ignore-scripts
-        working-directory: ./MyApp.Client
-
       - name: Build
         run: dotnet build MyApp.slnx --no-restore
 
@@ -72,8 +59,25 @@ jobs:
       - name: test
         run: dotnet test MyApp.slnx --no-build --no-restore
 
-      - name: Client typecheck and tests
-        run: npm run typecheck && npm run test:run
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Vite+ and install npm dependencies
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: '24'
+          working-directory: ./MyApp.Client
+          cache: true
+
+      - name: check (format, lint, type check)
+        run: vp check
+        working-directory: ./MyApp.Client
+
+      - name: test
+        run: vp test run
         working-directory: ./MyApp.Client
 
       - name: Static client export

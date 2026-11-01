@@ -19,7 +19,7 @@ dotnet build
 dotnet test --no-build
 
 cd "$PROJECT_ROOT/MyApp.Client"
-npm run typecheck
+npm run check
 npm run test:run
 npm run build
 
