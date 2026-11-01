@@ -11,6 +11,7 @@ import { appAuth } from '@/lib/auth'
 import { GetSaasAdmin, GetSaasAdminResponse, SaasPlan, SaveCustomerOverride } from '@/lib/dtos'
 import { client } from '@/lib/gateway'
 import { product } from '@/lib/product'
+import { formText } from '@/lib/utils'
 
 export type AdminSection = 'overview' | 'customers' | 'plans' | 'usage' | 'operations' | 'security' | 'settings'
 
@@ -53,9 +54,9 @@ export default function AdminCenterPage({section}:{section:AdminSection}) {
 
   const updatePlan=(updated:SaasPlan)=>setData(current=>current?{...current,plans:(current.plans??[]).map(plan=>plan.id===updated.id?updated:plan).sort((a,b)=>(a.displayOrder??0)-(b.displayOrder??0))}:current)
   const saveOverride=async(event:FormEvent<HTMLFormElement>)=>{
-    event.preventDefault();const formElement=event.currentTarget;const form=new FormData(formElement);const validUntil=String(form.get('validUntil')??'')
+    event.preventDefault();const formElement=event.currentTarget;const form=new FormData(formElement);const validUntil=formText(form, 'validUntil')
     setSavingOverride(true);setOverrideMessage(undefined)
-    const api=await client.api(new SaveCustomerOverride({workspaceId:String(form.get('workspaceId')),key:String(form.get('key')),quotaUnits:Number(form.get('quotaUnits')),validUntil:validUntil?new Date(`${validUntil}T23:59:59Z`).toISOString():undefined,reason:String(form.get('reason'))}))
+    const api=await client.api(new SaveCustomerOverride({workspaceId:formText(form, 'workspaceId'),key:formText(form, 'key'),quotaUnits:Number(form.get('quotaUnits')),validUntil:validUntil?new Date(`${validUntil}T23:59:59Z`).toISOString():undefined,reason:formText(form, 'reason')}))
     setOverrideMessage(api.succeeded?{ok:true,text:'Customer override saved and added to the audit trail.'}:{ok:false,text:api.error?.message??'Unable to save this override.'})
     setSavingOverride(false);if(api.succeeded)formElement.reset()
   }
@@ -69,7 +70,10 @@ export default function AdminCenterPage({section}:{section:AdminSection}) {
   ]
 
   return <AppShell>
-    <PageHeading eyebrow={`${product.name} operations center`} title={heading.title} description={heading.description} action={isAdmin?<a href="/admin-ui" className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 dark:border-white/15 dark:bg-white/5 dark:text-white">ServiceStack Admin <ArrowUpRight className="h-4 w-4"/></a>:undefined}/>
+    <PageHeading eyebrow={`${product.name} operations center`} title={heading.title} description={heading.description} action={isAdmin?(
+// ServiceStack Admin UI, not a Next.js page
+// oxlint-disable-next-line nextjs/no-html-link-for-pages
+<a href="/admin-ui" className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 dark:border-white/15 dark:bg-white/5 dark:text-white">ServiceStack Admin <ArrowUpRight className="h-4 w-4"/></a>):undefined}/>
     {error&&<Panel className="mb-5 border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">{error}</Panel>}
 
     {section==='overview'&&<>

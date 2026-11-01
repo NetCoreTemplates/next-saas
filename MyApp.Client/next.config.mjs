@@ -25,11 +25,6 @@ const API_URL = isProd ? DEPLOY_API : (buildLocal ? '' : target)
 const nextConfig = {
     devIndicators: false,
 
-    // Use the compiler API so production builds are reliable on newer Node runtimes.
-    experimental: {
-        useTypeScriptCli: false
-    },
-
     // Configure pageExtensions to include MDX files
     pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
 

@@ -6,6 +6,7 @@ import { Archive, Download, LogOut, RefreshCw, ShieldAlert, UserRoundCog } from 
 import { Panel, StatusPill } from '@/components/app-shell'
 import { client } from '@/lib/gateway'
 import { CancelWorkspaceDeletion, CreateWorkspaceExport, DownloadWorkspaceExport, GetWorkspaceLifecycle, GetWorkspaceMembers, LeaveWorkspace, RequestWorkspaceDeletion, TransferWorkspaceOwnership, WorkspaceMemberInfo, WorkspaceLifecycleRequest, DataExportArtifact } from '@/lib/dtos'
+import { formText } from '@/lib/utils'
 
 const formatBytes=(value?:number)=>{const bytes=value??0;return bytes>=1024**2?`${(bytes/1024**2).toFixed(1)} MB`:bytes>=1024?`${(bytes/1024).toFixed(1)} KB`:`${bytes.toLocaleString()} B`}
 
@@ -16,7 +17,7 @@ export default function WorkspaceLifecycle({workspaceName,role}:{workspaceName?:
   const load=useCallback(async()=>{if(!isAdmin)return;const [life,team]=await Promise.all([client.api(new GetWorkspaceLifecycle({ workspaceId: tabWorkspaceId() })),client.api(new GetWorkspaceMembers({ workspaceId: tabWorkspaceId() }))]);if(life.succeeded){setRequests(life.response?.results??[]);setExports(life.response?.exports??[]);setExportExpiryDays(life.response?.exportExpiryDays??7);setDeletionDelayDays(life.response?.workspaceDeletionDelayDays??7)}if(team.succeeded)setMembers((team.response?.results??[]).filter(x=>x.status==='Active'))},[isAdmin])
   useEffect(()=>{void load()},[load])
   const run=async(key:string,operation:()=>Promise<{succeeded:boolean,error?:{message?:string}}>,success:string)=>{setBusy(key);setNotice(undefined);const api=await operation();setNotice(api.succeeded?{ok:true,text:success}:{ok:false,text:api.error?.message??'Operation failed.'});setBusy(undefined);if(api.succeeded)await load()}
-  const requestDeletion=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const form=new FormData(event.currentTarget);const confirmation=String(form.get('confirmation')??'');void run('delete',()=>client.api(new RequestWorkspaceDeletion({ workspaceId: tabWorkspaceId(), confirmation})),'Organization deletion scheduled.')}
+  const requestDeletion=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const form=new FormData(event.currentTarget);const confirmation=formText(form, 'confirmation');void run('delete',()=>client.api(new RequestWorkspaceDeletion({ workspaceId: tabWorkspaceId(), confirmation})),'Organization deletion scheduled.')}
   const download=async(file:DataExportArtifact)=>{if(!file.id)return;try{const blob=await client.get(new DownloadWorkspaceExport({ workspaceId: tabWorkspaceId(), id:file.id}));const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${workspaceName||'organization'}-export.zip`;a.click();URL.revokeObjectURL(url)}catch(e){setNotice({ok:false,text:e instanceof Error?e.message:'Download failed.'})}}
   const deletion=requests.find(x=>x.type==='Delete'&&['Pending','Scheduled','Processing'].includes(x.status??''))
   return <div className="mt-5 space-y-5">

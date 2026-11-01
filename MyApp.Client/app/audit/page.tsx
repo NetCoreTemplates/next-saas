@@ -26,7 +26,7 @@ function AuditPage(){
   useEffect(()=>{
     if(dashboardLoading||loaded.current||!hasFeature(data?.entitlements,'audit.read'))return
     loaded.current=true;setLoading(true)
-    client.api(new QueryWorkspaceAuditEvents({ workspaceId: tabWorkspaceId(), take:pageSize})).then(api=>{if(api.succeeded){setEvents(api.response?.results??[]);setTotal(api.response?.total??0)}else setError(api.error?.message??'Unable to load the audit log.');setLoading(false)})
+    void client.api(new QueryWorkspaceAuditEvents({ workspaceId: tabWorkspaceId(), take:pageSize})).then(api=>{if(api.succeeded){setEvents(api.response?.results??[]);setTotal(api.response?.total??0)}else setError(api.error?.message??'Unable to load the audit log.');setLoading(false)})
   },[dashboardLoading,data?.entitlements])
   if(dashboardLoading)return <AppShell><LoadingPanel/></AppShell>
   const shown=events.filter(x=>!filter||x.action?.toLowerCase().includes(filter.toLowerCase())||x.category?.toLowerCase().includes(filter.toLowerCase())||x.userId?.toLowerCase().includes(filter.toLowerCase()))

@@ -85,7 +85,8 @@ function ApiKeysPage() {
         </Panel>
       </div>
     </FeatureGate>
-    <Panel className="mt-5 p-6"><div className="flex items-start gap-3"><Code2 className="mt-0.5 h-5 w-5 text-[#0b5cff]" /><div><h2 className="font-semibold">Typed API contracts</h2><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Regenerate the TypeScript DTO client after changing C# request contracts with <code className="rounded bg-slate-100 px-1.5 py-1 text-xs dark:bg-white/10">npm run dtos</code>. Explore every endpoint in <a className="font-semibold text-[#0b5cff]" href="/scalar/v1">Scalar API Reference</a>.</p></div></div></Panel>
+    <Panel className="mt-5 p-6"><div className="flex items-start gap-3"><Code2 className="mt-0.5 h-5 w-5 text-[#0b5cff]" /><div><h2 className="font-semibold">Typed API contracts</h2><p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">Regenerate the TypeScript DTO client after changing C# request contracts with <code className="rounded bg-slate-100 px-1.5 py-1 text-xs dark:bg-white/10">npm run dtos</code>. Explore every endpoint in {/* ASP.NET Core endpoint, not a Next.js page */}{/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
+<a className="font-semibold text-[#0b5cff]" href="/scalar/v1">Scalar API Reference</a>.</p></div></div></Panel>
   </AppShell>
 }
 

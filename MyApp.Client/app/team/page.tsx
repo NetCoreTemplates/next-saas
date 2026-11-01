@@ -8,6 +8,7 @@ import AppShell, { PageHeading, Panel, StatusPill } from '@/components/app-shell
 import { ValidateAuth, appAuth } from '@/lib/auth'
 import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
 import { GetWorkspaceMembers, InviteWorkspaceMember, RemoveWorkspaceMember, ResendWorkspaceInvitation, UpdateWorkspaceMemberRole, WorkspaceKind, WorkspaceMemberInfo, WorkspaceMemberRole } from '@/lib/dtos'
+import { formText } from '@/lib/utils'
 
 function TeamPage() {
   const client = useClient()
@@ -35,7 +36,7 @@ function TeamPage() {
     event.preventDefault()
     const form = event.currentTarget
     const values = new FormData(form)
-    const api = await client.api(new InviteWorkspaceMember({ workspaceId: tabWorkspaceId(), email: String(values.get('email')), role: String(values.get('role')) as WorkspaceMemberRole }))
+    const api = await client.api(new InviteWorkspaceMember({ workspaceId: tabWorkspaceId(), email: formText(values, 'email'), role: formText(values, 'role') as WorkspaceMemberRole }))
     if (api.succeeded) { setShowInvite(false); form.reset(); showInvitationResult(api.response); await load() }
     else setNotice(api.error?.message)
   }

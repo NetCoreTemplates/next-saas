@@ -93,7 +93,7 @@ export default function AppShell({ children, workspaceName = 'My organization' }
 
   useEffect(() => {
     if (!user?.userId) return
-    client.api(new GetMyWorkspaces()).then(api => {
+    void client.api(new GetMyWorkspaces()).then(api => {
       if (!api.succeeded) return
       const results = api.response?.results ?? []
       const tabWorkspaceId = getTabWorkspaceId()

@@ -96,15 +96,15 @@ export default function PricingPage() {
 
   const checkout = async (plan:PlanInfo) => {
     const price = plan.prices?.find(x => x.interval === (annual ? BillingInterval.Year : BillingInterval.Month))
-    if (!user) { location.href = `/signup?account=${audience === WorkspaceKind.Business ? 'business' : 'individual'}&redirect=${encodeURIComponent('/pricing')}`; return }
+    if (!user) { location.assign(`/signup?account=${audience === WorkspaceKind.Business ? 'business' : 'individual'}&redirect=${encodeURIComponent('/pricing')}`); return }
     if (activeKind && activeKind !== audience) { setMessage('Switch to a matching account in the application before choosing this plan. You can create a business organization from Settings.'); return }
-    if (!price || price.unitAmount === 0) { location.href='/dashboard'; return }
+    if (!price || price.unitAmount === 0) { location.assign('/dashboard'); return }
     if (catalogState === 'loading') { setMessage('Live pricing is still loading. Please wait before starting checkout.'); return }
     if (catalogState === 'error') { setMessage('Checkout is temporarily unavailable because live pricing could not be loaded. Please try again.'); return }
     if (!price.checkoutReady) { setMessage('This price is not available for checkout. Please choose another option or try again later.'); return }
     setBusy(plan.code); setMessage(undefined)
     const api = await client.api(new CreateCheckoutSession({ workspaceId: tabWorkspaceId(), priceId:price.id}))
-    if (api.succeeded && api.response?.url) location.href=api.response.url
+    if (api.succeeded && api.response?.url) location.assign(api.response.url)
     else if (api.error?.errorCode === 'PlanNotAvailable') {
       const refreshed = await loadCatalog()
       setMessage(refreshed

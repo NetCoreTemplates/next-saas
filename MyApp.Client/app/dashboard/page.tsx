@@ -80,7 +80,8 @@ function DashboardPage() {
           <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${step.done?'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-[#86efcd]':'border border-slate-200 text-slate-400 dark:border-white/10'}`}>{step.done?<CheckCircle2 className="h-4 w-4"/>:i+1}</span>
           <div className="min-w-0 pt-0.5">{step.done||!step.href?<p className={`text-sm font-medium ${step.done?'text-slate-400 line-through decoration-slate-300 dark:decoration-slate-600':''}`}>{step.label}</p>:<Link href={step.href} className="group text-sm font-medium hover:text-[#0b5cff] dark:hover:text-blue-300">{step.label} <span className="text-[#0b5cff] transition group-hover:translate-x-0.5 dark:text-blue-300">→</span></Link>}</div>
         </li>)}</ol>
-        <div className="mt-7 rounded-xl bg-[#091426] p-4 text-white"><KeyRound className="h-5 w-5 text-[#86efcd]"/><p className="mt-3 text-sm font-semibold">Automate document imports</p><p className="mt-1 text-xs leading-5 text-slate-400">Use API keys and typed contracts to connect your content pipeline.</p><a href="/scalar/v1" className="mt-3 inline-flex text-xs font-semibold text-[#86efcd] hover:underline">Open API reference →</a></div>
+        <div className="mt-7 rounded-xl bg-[#091426] p-4 text-white"><KeyRound className="h-5 w-5 text-[#86efcd]"/><p className="mt-3 text-sm font-semibold">Automate document imports</p><p className="mt-1 text-xs leading-5 text-slate-400">Use API keys and typed contracts to connect your content pipeline.</p>{/* ASP.NET Core endpoint, not a Next.js page */}{/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
+<a href="/scalar/v1" className="mt-3 inline-flex text-xs font-semibold text-[#86efcd] hover:underline">Open API reference →</a></div>
       </Panel>
     </div>
   </AppShell>

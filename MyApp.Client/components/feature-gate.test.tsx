@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import FeatureGate, { hasFeature } from './feature-gate'
 
 vi.mock('next/link', () => ({ default: ({children,href}:{children:React.ReactNode,href:string}) => <a href={href}>{children}</a> }))

@@ -44,3 +44,9 @@ export function formatMeterUnits(key?:string, value?:number) {
     if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`
     return `${n.toLocaleString()} B`
 }
+
+/** A text field's value, or '' when the form has no such field */
+export function formText(form:FormData, name:string) {
+    const value = form.get(name)
+    return typeof value === 'string' ? value : ''
+}

@@ -1,6 +1,5 @@
 'use client'
 
-import {serializeToObject} from "@servicestack/client"
 import {SyntheticEvent, Suspense, useEffect, useState} from "react"
 import {useRouter, useSearchParams} from "next/navigation"
 import Link from "next/link"

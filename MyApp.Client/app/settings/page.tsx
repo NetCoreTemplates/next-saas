@@ -10,6 +10,7 @@ import { setTabWorkspaceId } from '@/lib/gateway'
 import { LoadingPanel, useSaasDashboard } from '@/lib/use-saas'
 import { CreateOrganization, UpdateWorkspaceProfile, WorkspaceKind } from '@/lib/dtos'
 import WorkspaceLifecycle from '@/components/workspace-lifecycle'
+import { formText } from '@/lib/utils'
 
 const inputClass = 'mt-2 block w-full rounded-[10px] border-slate-200 bg-white text-sm dark:border-white/10 dark:bg-white/5'
 
@@ -25,11 +26,11 @@ function SettingsPage() {
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const api = await client.api(new UpdateWorkspaceProfile({ workspaceId: tabWorkspaceId(), name: String(form.get('name')), slug: String(form.get('slug')),
-      billingEmail: String(form.get('billingEmail')),
+    const api = await client.api(new UpdateWorkspaceProfile({ workspaceId: tabWorkspaceId(), name: formText(form, 'name'), slug: formText(form, 'slug'),
+      billingEmail: formText(form, 'billingEmail'),
     }))
     setNotice(api.succeeded ? `${individual ? 'Account' : 'Organization'} saved.` : api.error?.message)
-    if (api.succeeded) refresh()
+    if (api.succeeded) void refresh()
   }
 
   const createOrganization = async (event: FormEvent<HTMLFormElement>) => {
@@ -38,8 +39,8 @@ function SettingsPage() {
     setCreateNotice(undefined)
     const form = new FormData(event.currentTarget)
     const api = await client.api(new CreateOrganization({
-      name: String(form.get('organizationName')),
-      billingEmail: String(form.get('organizationBillingEmail') || '') || undefined,
+      name: formText(form, 'organizationName'),
+      billingEmail: formText(form, 'organizationBillingEmail') || undefined,
     }))
     if (api.succeeded) { setTabWorkspaceId(api.response?.workspace?.id); window.location.href = '/dashboard'; return }
     setCreateNotice(api.error?.message ?? 'Unable to create the organization.')
@@ -60,7 +61,8 @@ function SettingsPage() {
           <div className="flex items-center gap-4 sm:col-span-2"><button className="rounded-[10px] bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white">Save {individual ? 'account' : 'organization'}</button>{notice && <p className="text-xs text-[#0b5cff]">{notice}</p>}</div>
         </form>
       </Panel>
-      <Panel className="p-6"><UserRound className="h-5 w-5 text-[#0b5cff]" /><h2 className="mt-4 font-semibold">Personal identity</h2><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{user?.userName}</p><a href="/Identity/Account/Manage" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#0b5cff]">Manage identity <ExternalLink className="h-4 w-4" /></a><p className="mt-8 text-xs text-slate-500">Free-plan usage periods reset on calendar month boundaries in UTC.</p></Panel>
+      <Panel className="p-6"><UserRound className="h-5 w-5 text-[#0b5cff]" /><h2 className="mt-4 font-semibold">Personal identity</h2><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{user?.userName}</p>{/* ASP.NET Core endpoint, not a Next.js page */}{/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
+<a href="/Identity/Account/Manage" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#0b5cff]">Manage identity <ExternalLink className="h-4 w-4" /></a><p className="mt-8 text-xs text-slate-500">Free-plan usage periods reset on calendar month boundaries in UTC.</p></Panel>
     </div>
     <div id="create-organization"><Panel className="mt-5 p-6">
       <div className="flex items-start gap-3"><Plus className="h-5 w-5 text-emerald-700" /><div><h2 className="font-semibold">{individual ? 'Create a business organization' : 'Create another organization'}</h2><p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">Create a separate business organization with its own members, plan, usage, files, and API keys. You will become its Owner.</p></div></div>

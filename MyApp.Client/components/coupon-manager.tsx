@@ -81,7 +81,7 @@ export function CouponManager() {
   useEffect(() => {
     if (loaded.current) return
     loaded.current = true
-    load()
+    void load()
   }, [])
 
   const create = async (event: FormEvent) => {
